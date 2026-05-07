@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -54,4 +55,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        sys.exit(0)
+    except Exception as exc:
+        print(f"[init_db.py] Failed: {exc}", file=sys.stderr)
+        sys.exit(1)

@@ -23,7 +23,7 @@ Future coding sessions must follow the constraints in this file unless the proje
 **Runtime:**
 - Deploy with Docker on Easypanel.
 - Use Supervisor when one container must run both Python and Next.js processes.
-- Treat port `8000` as the public UI port unless deployment configuration changes.
+- Treat port `3000` as the public UI port unless deployment configuration changes.
 
 ## Database Rules
 
@@ -80,7 +80,7 @@ Future coding sessions must follow the constraints in this file unless the proje
 **Secrets:**
 - Keep API keys in environment variables.
 - Do not commit production secrets to documentation, examples, frontend code, or logs.
-- Treat LiveKit, OpenAI, Sarvam, Cal.com, Fast2SMS, and Supabase service role keys as sensitive.
+- Treat LiveKit, PostgreSQL, OpenAI, Sarvam, Cal.com, and Fast2SMS credentials as sensitive.
 
 ## Voice Agent Behavior Rules
 

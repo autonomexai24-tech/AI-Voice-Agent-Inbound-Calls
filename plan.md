@@ -10,7 +10,7 @@
 - Configure the Next.js app with `output: "standalone"` in `next.config.js` so the dashboard can survive within the KVM2 VPS memory limits.
 - Use Supervisor as the container process manager.
 - Run the Python LiveKit worker and the dashboard process side-by-side.
-- Expose port `8000` as the public dashboard/UI port for Easypanel.
+- Expose port `3000` as the public dashboard/UI port for Easypanel.
 
 **Execution steps:**
 - Keep Python voice runtime isolated under `/app`.
@@ -18,11 +18,11 @@
 - Copy only the built frontend assets and Python dependencies into the final image.
 - Run the dashboard with `node server.js` from `.next/standalone` instead of `npm start` to reduce RAM usage and avoid VPS OOM crashes.
 - Start both services through Supervisor with restart policies.
-- Configure Easypanel to route public HTTP traffic to container port `8000`.
+- Configure Easypanel to route public HTTP traffic to container port `3000`.
 
 **Acceptance criteria:**
 - The container starts with Supervisor as PID 1.
-- The dashboard is reachable on port `8000`.
+- The dashboard is reachable on port `3000`.
 - The LiveKit worker starts automatically and restarts on failure.
 - No Python or Next.js dev server is required in production.
 
@@ -185,7 +185,7 @@
 
 **Scope:**
 - Build configuration pages for `initial_greeting`, `system_prompt`, and `vad_threshold`.
-- Store configuration in Supabase.
+- Store configuration in PostgreSQL.
 - Apply configuration dynamically to new calls.
 
 **Execution steps:**
@@ -206,13 +206,13 @@
 
 **Scope:**
 - Protect the dashboard with a single password stored in `DASHBOARD_PASSWORD`.
-- Keep service role keys server-side only.
+- Keep database credentials server-side only.
 - Deploy with Easypanel-managed environment variables.
 - Verify inbound calls, dashboard access, database writes, and SMS notifications.
 
 **Execution steps:**
 - Add password protection middleware or server-side auth gate for dashboard routes.
-- Store `DASHBOARD_PASSWORD`, Supabase keys, LiveKit keys, OpenAI keys, Sarvam keys, Cal.com keys, and Fast2SMS key in Easypanel.
+- Store `DASHBOARD_PASSWORD`, `DATABASE_URL`, LiveKit keys, OpenAI keys, Sarvam keys, Cal.com keys, and Fast2SMS key in Easypanel.
 - Build and deploy the Docker image through Easypanel.
 - Configure public domain and TLS.
 - Run launch tests for inbound call handling, booking, SMS, dashboard analytics, and CRM visibility.
