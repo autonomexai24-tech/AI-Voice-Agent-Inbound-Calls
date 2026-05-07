@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS frontend-builder
+FROM node:20-slim AS frontend-builder
 
 WORKDIR /app/frontend
 
@@ -10,8 +10,6 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 COPY frontend/ ./
 RUN npm run build && test -f .next/standalone/server.js
-
-FROM node:20-bookworm-slim AS node-runtime
 
 FROM python:3.11-slim AS python-builder
 
@@ -45,7 +43,7 @@ ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=python-builder /root/.local /root/.local
 COPY . .
 COPY --from=frontend-builder /app/frontend/.next/standalone ./frontend/.next/standalone

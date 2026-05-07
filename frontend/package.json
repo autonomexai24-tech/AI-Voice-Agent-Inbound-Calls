@@ -8,9 +8,18 @@
     "start": "next start --hostname 0.0.0.0 --port 8000"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.89.0",
     "next": "16.2.5",
     "react": "19.2.6",
     "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.3",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.4.23",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3"
   },
   "overrides": {
     "postcss": "8.5.14"

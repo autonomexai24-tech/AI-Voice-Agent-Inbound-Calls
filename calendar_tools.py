@@ -10,10 +10,21 @@ CAL_BASE = "https://api.cal.com/v1"
 
 
 def get_cal_creds() -> dict:
+    event_id_raw = os.environ.get("CALCOM_EVENT_TYPE_ID", "0") or "0"
+    try:
+        event_id = int(event_id_raw)
+    except ValueError:
+        logger.error("[CAL] CALCOM_EVENT_TYPE_ID must be an integer; got %r", event_id_raw)
+        event_id = 0
+
     return {
-        "api_key":  os.environ.get("CAL_API_KEY", ""),
-        "event_id": int(os.environ.get("CAL_EVENT_TYPE_ID", "0") or "0"),
+        "api_key": os.environ.get("CALCOM_API_KEY", ""),
+        "event_id": event_id,
     }
+
+
+def _format_slot_label(value: datetime) -> str:
+    return value.strftime("%I:%M %p").lstrip("0")
 
 
 # ─── Cal.com: Get available slots ─────────────────────────────────────────────
@@ -56,7 +67,7 @@ def _get_slots_calcom(date_str: str) -> list:
         slots = []
         for s in raw_slots:
             dt = datetime.fromisoformat(s["time"])
-            slots.append({"time": s["time"], "label": dt.strftime("%-I:%M %p")})
+            slots.append({"time": s["time"], "label": _format_slot_label(dt)})
         logger.info(f"[CAL] {len(slots)} slots for {date_str}")
         return slots
     except Exception as e:
@@ -110,7 +121,7 @@ def _get_slots_gcal(date_str: str, calendar_id: str, creds_file: str) -> list:
         if not is_busy:
             free_slots.append({
                 "time":  slot.isoformat(),
-                "label": slot.strftime("%-I:%M %p"),
+                "label": _format_slot_label(slot),
             })
         slot = slot_end
 
