@@ -1,0 +1,473 @@
+{
+  "id": "professional-voice-platform",
+  "title": "Professional Inbound AI Voice Platform",
+  "source": {
+    "roadmap_file": "plan.md",
+    "created_from_request": "Generate a PRD for building the Professional Inbound AI Voice Platform from the existing roadmap."
+  },
+  "summary": "Build a production-ready inbound AI voice platform that receives SIP calls through LiveKit, runs a Python voice worker and Next.js operator dashboard in an Easypanel-deployable container, uses self-hosted Supabase as the system of record, powers multilingual conversations with OpenAI and Sarvam AI, books appointments through Cal.com, sends Fast2SMS confirmations, and exposes analytics, CRM, calendar, and agent configuration workflows.",
+  "problem_statement": "The current inbound AI voice system needs to become a deployable professional product rather than a loose collection of runtime scripts and setup notes. Business operators need a secure dashboard for monitoring calls, managing callers and appointments, adjusting agent behavior, and validating production outcomes, while the voice runtime needs reliable containerized deployment and integration with LiveKit, Supabase, OpenAI, Sarvam AI, Cal.com, and Fast2SMS.",
+  "goals": [
+    "Package the Python LiveKit voice worker and Next.js dashboard into a single Easypanel-ready Docker container.",
+    "Connect all backend data flows to self-hosted Supabase through the internal Kong route.",
+    "Receive inbound SIP calls through LiveKit Cloud and persist the full call lifecycle.",
+    "Use OpenAI for reasoning and Sarvam AI for STT/TTS voice interaction.",
+    "Enable live appointment booking through Cal.com during calls.",
+    "Send Fast2SMS booking confirmations exactly once after successful booking completion.",
+    "Provide a professional Next.js dashboard for analytics, CRM, calendar, and agent configuration.",
+    "Protect production access and secrets while supporting deployment on Easypanel."
+  ],
+  "non_goals": [
+    "Do not build outbound calling workflows in this milestone.",
+    "Do not replace LiveKit SIP with a different telephony provider.",
+    "Do not create a multi-tenant billing or subscription system.",
+    "Do not expose Supabase service-role credentials to browser code.",
+    "Do not require local development servers in production."
+  ],
+  "personas": [
+    {
+      "name": "Business operator",
+      "needs": [
+        "See inbound call volume, booking performance, missed or failed calls, and average duration.",
+        "Search callers by phone number or name and review call summaries and transcripts.",
+        "Track upcoming and historical appointments.",
+        "Adjust greeting, behavior prompt, and VAD sensitivity without redeploying."
+      ]
+    },
+    {
+      "name": "Caller",
+      "needs": [
+        "Reach a responsive voice agent through a normal phone call.",
+        "Receive accurate answers and appointment options in natural conversation.",
+        "Get spoken confirmation and SMS confirmation when a booking succeeds."
+      ]
+    },
+    {
+      "name": "Platform deployer",
+      "needs": [
+        "Deploy one container on Easypanel.",
+        "Configure secrets and service URLs through environment variables.",
+        "Verify dashboard, calls, database writes, booking, and SMS behavior after launch."
+      ]
+    }
+  ],
+  "user_stories": [
+    {
+      "id": "US-001",
+      "story": "As a platform deployer, I want one production container that runs both the dashboard and voice worker, so that Easypanel deployment is simple and reliable."
+    },
+    {
+      "id": "US-002",
+      "story": "As a caller, I want inbound phone calls to connect to the AI agent reliably, so that I can interact with the business without using a web app."
+    },
+    {
+      "id": "US-003",
+      "story": "As a business operator, I want each call recorded with metadata, transcript, summary, duration, outcome, and booking state, so that I can audit conversations and follow up."
+    },
+    {
+      "id": "US-004",
+      "story": "As a caller, I want the AI agent to check availability and book an appointment during the call, so that I do not need a separate scheduling flow."
+    },
+    {
+      "id": "US-005",
+      "story": "As a caller, I want an SMS confirmation after a successful booking, so that I have the appointment details after the call."
+    },
+    {
+      "id": "US-006",
+      "story": "As a business operator, I want analytics for calls and bookings, so that I can understand operating performance."
+    },
+    {
+      "id": "US-007",
+      "story": "As a business operator, I want CRM and calendar pages, so that I can find callers and appointments quickly."
+    },
+    {
+      "id": "US-008",
+      "story": "As a business operator, I want to change the agent greeting, system prompt, and VAD sensitivity from the dashboard, so that agent behavior can be tuned safely without code deployment."
+    }
+  ],
+  "functional_requirements": [
+    {
+      "id": "FR-001",
+      "area": "Containerization",
+      "requirement": "The platform must use a multi-stage Docker build with Python and Next.js dependency stages and a python:3.11-slim final runtime image.",
+      "acceptance_criteria": [
+        "Supervisor runs as PID 1.",
+        "The Python LiveKit worker starts automatically.",
+        "The dashboard is reachable on public container port 8000.",
+        "The production dashboard uses Next.js standalone output and does not require npm start or a dev server."
+      ]
+    },
+    {
+      "id": "FR-002",
+      "area": "Database",
+      "requirement": "The platform must use self-hosted Supabase through SUPABASE_SELF_HOSTED_URL and internal Kong routing as the system of record.",
+      "acceptance_criteria": [
+        "Backend call, booking, transcript, SMS, caller, and agent configuration records are written through the internal Supabase route.",
+        "Dashboard analytics and CRM data are read from Supabase.",
+        "SUPABASE_SERVICE_ROLE_KEY is only used by trusted backend or server-side code."
+      ]
+    },
+    {
+      "id": "FR-003",
+      "area": "Inbound SIP",
+      "requirement": "The platform must receive inbound SIP calls through LiveKit Cloud and route them to the Python worker.",
+      "acceptance_criteria": [
+        "Inbound calls create LiveKit sessions.",
+        "Each call creates a unique Supabase call record.",
+        "Call failures are logged with actionable error information."
+      ]
+    },
+    {
+      "id": "FR-004",
+      "area": "AI Voice Brain",
+      "requirement": "The voice agent must use OpenAI for reasoning and Sarvam AI for speech-to-text and text-to-speech where supported.",
+      "acceptance_criteria": [
+        "The agent greets callers consistently using configured greeting text.",
+        "The agent follows the configured system prompt.",
+        "Transcript turns include speaker, timestamp, confidence where available, and final text.",
+        "VAD threshold can be changed from dashboard configuration and applied to new calls."
+      ]
+    },
+    {
+      "id": "FR-005",
+      "area": "Booking",
+      "requirement": "The agent must integrate with Cal.com to check availability, propose slots, and create appointments during live calls.",
+      "acceptance_criteria": [
+        "Bookings require caller confirmation before creation.",
+        "Every booking is linked to a call record and caller phone number.",
+        "Booking ID, time, status, and metadata are persisted in Supabase.",
+        "Booking failures are handled gracefully in the conversation."
+      ]
+    },
+    {
+      "id": "FR-006",
+      "area": "SMS Notifications",
+      "requirement": "The platform must send Fast2SMS confirmations only for confirmed bookings.",
+      "acceptance_criteria": [
+        "No SMS is sent for non-booking calls.",
+        "Only one SMS is sent per confirmed booking.",
+        "SMS provider response, status, and failure reason are persisted.",
+        "Failed SMS attempts are visible through dashboard data or logs."
+      ]
+    },
+    {
+      "id": "FR-007",
+      "area": "Analytics Dashboard",
+      "requirement": "The Next.js dashboard must provide operator analytics for calls and bookings.",
+      "acceptance_criteria": [
+        "Dashboard shows Total Calls, Booking Rate, Average Duration, and Missed or Failed Calls.",
+        "Dashboard includes charts for call volume and booking success over time.",
+        "Dashboard supports filters for date range, call status, and booking outcome.",
+        "Metrics match Supabase call and booking records."
+      ]
+    },
+    {
+      "id": "FR-008",
+      "area": "CRM and Calendar",
+      "requirement": "The dashboard must provide caller CRM and appointment tracking pages.",
+      "acceptance_criteria": [
+        "Operators can search by caller phone number and name.",
+        "Caller rows show phone number, caller name, last call time, status, and summary.",
+        "Operators can review transcripts and outcomes.",
+        "Calendar or appointment tracking views show time, caller, booking status, and source call."
+      ]
+    },
+    {
+      "id": "FR-009",
+      "area": "Agent Configuration",
+      "requirement": "The dashboard must let operators safely edit initial greeting, system prompt, and VAD threshold.",
+      "acceptance_criteria": [
+        "Configuration is stored in Supabase with timestamps.",
+        "Invalid VAD threshold values are blocked.",
+        "New inbound calls use the latest active configuration.",
+        "Operators can update behavior without redeployment."
+      ]
+    },
+    {
+      "id": "FR-010",
+      "area": "Security and Launch",
+      "requirement": "The production dashboard must be password protected and deployable on Easypanel with environment-managed secrets.",
+      "acceptance_criteria": [
+        "Dashboard routes are inaccessible without DASHBOARD_PASSWORD authentication.",
+        "LiveKit, Supabase, OpenAI, Sarvam AI, Cal.com, and Fast2SMS secrets are not committed to source control.",
+        "Production deployment supports public domain and TLS through Easypanel.",
+        "Launch verification covers inbound calls, booking, SMS, dashboard analytics, CRM visibility, and database writes."
+      ]
+    }
+  ],
+  "data_requirements": {
+    "entities": [
+      "inbound_calls",
+      "caller_profiles",
+      "transcripts",
+      "booking_records",
+      "notification_events",
+      "agent_settings"
+    ],
+    "required_indexes": [
+      "phone_number",
+      "call_start_time",
+      "booking_status",
+      "created_timestamp"
+    ],
+    "sensitive_data_rules": [
+      "Service role credentials must remain server-side.",
+      "Browser code may only use browser-safe Supabase anon credentials where appropriate.",
+      "Production secrets must be provided through Easypanel environment variables."
+    ]
+  },
+  "integration_requirements": [
+    {
+      "system": "LiveKit Cloud",
+      "purpose": "Inbound SIP trunking, call sessions, and dispatch to the Python voice worker."
+    },
+    {
+      "system": "Self-hosted Supabase",
+      "purpose": "Database API gateway and persistent storage for calls, callers, transcripts, bookings, notifications, analytics, and configuration."
+    },
+    {
+      "system": "OpenAI",
+      "purpose": "LLM reasoning layer for the voice agent."
+    },
+    {
+      "system": "Sarvam AI",
+      "purpose": "Speech-to-text and text-to-speech for multilingual voice interaction where supported."
+    },
+    {
+      "system": "Cal.com",
+      "purpose": "Availability lookup and appointment creation."
+    },
+    {
+      "system": "Fast2SMS",
+      "purpose": "Post-booking SMS confirmations."
+    },
+    {
+      "system": "Easypanel",
+      "purpose": "Container deployment, environment variable management, public routing, domain, and TLS."
+    }
+  ],
+  "technical_constraints": [
+    "Final container runtime must be based on python:3.11-slim.",
+    "Next.js production build must use output: \"standalone\".",
+    "Dashboard must listen on port 8000 for Easypanel routing.",
+    "Python voice worker and dashboard must run side-by-side under Supervisor.",
+    "Supabase traffic should use internal VPS routing through SUPABASE_SELF_HOSTED_URL.",
+    "The platform must fit KVM2 VPS memory constraints by avoiding development servers and unnecessary runtime build artifacts."
+  ],
+  "environment_variables": [
+    "DASHBOARD_PASSWORD",
+    "SUPABASE_SELF_HOSTED_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_ANON_KEY",
+    "LIVEKIT_URL",
+    "LIVEKIT_API_KEY",
+    "LIVEKIT_API_SECRET",
+    "OPENAI_API_KEY",
+    "SARVAM_API_KEY",
+    "CALCOM_API_KEY",
+    "FAST2SMS_API_KEY"
+  ],
+  "analytics_requirements": [
+    "Total inbound calls over selected date range.",
+    "Booking rate over selected date range.",
+    "Average call duration.",
+    "Missed and failed call count.",
+    "Call volume over time.",
+    "Booking success over time.",
+    "Filters by date range, call status, and booking outcome."
+  ],
+  "security_requirements": [
+    "Dashboard access must require the configured password.",
+    "Server-only secrets must not appear in client-side bundles.",
+    "Production secrets must be managed by Easypanel environment variables.",
+    "Failed call, booking, SMS, and database events must be logged sufficiently for operational diagnosis."
+  ],
+  "launch_acceptance": [
+    "A production container starts successfully in Easypanel.",
+    "Dashboard is reachable over the configured domain and TLS and protected by password authentication.",
+    "Inbound SIP call reaches the LiveKit session and Python worker.",
+    "Agent loads current Supabase configuration at call start.",
+    "Conversation transcript, summary, duration, outcome, and booking state are persisted.",
+    "Agent can complete a Cal.com booking during a call.",
+    "Fast2SMS sends one confirmation for a confirmed booking.",
+    "Analytics, CRM, calendar, and configuration pages display accurate Supabase-backed data."
+  ],
+  "testing_requirements": [
+    "Container smoke test verifying Supervisor starts both the dashboard and Python worker.",
+    "Database integration tests for call, transcript, booking, SMS, and agent configuration records.",
+    "Live inbound call end-to-end test through LiveKit SIP dispatch.",
+    "Voice conversation test covering greeting, VAD interruption behavior, transcript persistence, and prompt adherence.",
+    "Booking integration test against Cal.com using a controlled test calendar.",
+    "SMS integration test against Fast2SMS or a provider-safe test path that verifies duplicate prevention.",
+    "Dashboard tests for password protection, analytics filters, CRM search, appointment visibility, and configuration validation.",
+    "Launch verification on Easypanel with production-like environment variables."
+  ],
+  "risks": [
+    {
+      "risk": "LiveKit SIP, Cal.com, Fast2SMS, OpenAI, and Sarvam AI are external dependencies with independent failure modes.",
+      "mitigation": "Persist failure status and provider responses, log actionable errors, and degrade gracefully in-call where possible."
+    },
+    {
+      "risk": "KVM2 VPS memory limits may cause production instability if Next.js runs in development mode or ships unnecessary build artifacts.",
+      "mitigation": "Use standalone Next.js output, multi-stage Docker builds, and node server.js from .next/standalone."
+    },
+    {
+      "risk": "Service role key exposure would compromise Supabase data.",
+      "mitigation": "Restrict service-role usage to backend/server code and verify it is absent from client bundles."
+    },
+    {
+      "risk": "Duplicate SMS sends could create poor caller experience and extra cost.",
+      "mitigation": "Persist notification events and enforce one SMS per confirmed booking."
+    }
+  ],
+  "open_questions": [
+    "Which SIP provider and exact LiveKit inbound dispatch rule configuration will be used in production?",
+    "What exact appointment types and Cal.com event types should the agent support first?",
+    "Which languages and voices should be enabled for Sarvam AI at launch?",
+    "What retention policy should apply to call transcripts and caller data?",
+    "Should dashboard password authentication be replaced with role-based authentication after the initial launch?"
+  ],
+  "stories": [
+    {
+      "id": "FR-001",
+      "title": "Containerization: The platform must use a multi-stage Docker build with Python and Next.js dependency stages and a python:3.11-slim final runtime image.",
+      "description": "The platform must use a multi-stage Docker build with Python and Next.js dependency stages and a python:3.11-slim final runtime image.",
+      "acceptanceCriteria": [
+        "Supervisor runs as PID 1.",
+        "The Python LiveKit worker starts automatically.",
+        "The dashboard is reachable on public container port 8000.",
+        "The production dashboard uses Next.js standalone output and does not require npm start or a dev server."
+      ],
+      "dependsOn": [],
+      "status": "in_progress",
+      "startedAt": "2026-05-07T09:03:12.683401+00:00",
+      "completedAt": null,
+      "updatedAt": "2026-05-07T09:03:12.683401+00:00"
+    },
+    {
+      "id": "FR-002",
+      "title": "Database: The platform must use self-hosted Supabase through SUPABASE_SELF_HOSTED_URL and internal Kong routing as the system of record.",
+      "description": "The platform must use self-hosted Supabase through SUPABASE_SELF_HOSTED_URL and internal Kong routing as the system of record.",
+      "acceptanceCriteria": [
+        "Backend call, booking, transcript, SMS, caller, and agent configuration records are written through the internal Supabase route.",
+        "Dashboard analytics and CRM data are read from Supabase.",
+        "SUPABASE_SERVICE_ROLE_KEY is only used by trusted backend or server-side code."
+      ],
+      "dependsOn": [],
+      "status": "open"
+    },
+    {
+      "id": "FR-003",
+      "title": "Inbound SIP: The platform must receive inbound SIP calls through LiveKit Cloud and route them to the Python worker.",
+      "description": "The platform must receive inbound SIP calls through LiveKit Cloud and route them to the Python worker.",
+      "acceptanceCriteria": [
+        "Inbound calls create LiveKit sessions.",
+        "Each call creates a unique Supabase call record.",
+        "Call failures are logged with actionable error information."
+      ],
+      "dependsOn": [],
+      "status": "open"
+    },
+    {
+      "id": "FR-004",
+      "title": "AI Voice Brain: The voice agent must use OpenAI for reasoning and Sarvam AI for speech-to-text and text-to-speech where supported.",
+      "description": "The voice agent must use OpenAI for reasoning and Sarvam AI for speech-to-text and text-to-speech where supported.",
+      "acceptanceCriteria": [
+        "The agent greets callers consistently using configured greeting text.",
+        "The agent follows the configured system prompt.",
+        "Transcript turns include speaker, timestamp, confidence where available, and final text.",
+        "VAD threshold can be changed from dashboard configuration and applied to new calls."
+      ],
+      "dependsOn": [],
+      "status": "open"
+    },
+    {
+      "id": "FR-005",
+      "title": "Booking: The agent must integrate with Cal.com to check availability, propose slots, and create appointments during live calls.",
+      "description": "The agent must integrate with Cal.com to check availability, propose slots, and create appointments during live calls.",
+      "acceptanceCriteria": [
+        "Bookings require caller confirmation before creation.",
+        "Every booking is linked to a call record and caller phone number.",
+        "Booking ID, time, status, and metadata are persisted in Supabase.",
+        "Booking failures are handled gracefully in the conversation."
+      ],
+      "dependsOn": [],
+      "status": "open"
+    },
+    {
+      "id": "FR-006",
+      "title": "SMS Notifications: The platform must send Fast2SMS confirmations only for confirmed bookings.",
+      "description": "The platform must send Fast2SMS confirmations only for confirmed bookings.",
+      "acceptanceCriteria": [
+        "No SMS is sent for non-booking calls.",
+        "Only one SMS is sent per confirmed booking.",
+        "SMS provider response, status, and failure reason are persisted.",
+        "Failed SMS attempts are visible through dashboard data or logs."
+      ],
+      "dependsOn": [],
+      "status": "open"
+    },
+    {
+      "id": "FR-007",
+      "title": "Analytics Dashboard: The Next.js dashboard must provide operator analytics for calls and bookings.",
+      "description": "The Next.js dashboard must provide operator analytics for calls and bookings.",
+      "acceptanceCriteria": [
+        "Dashboard shows Total Calls, Booking Rate, Average Duration, and Missed or Failed Calls.",
+        "Dashboard includes charts for call volume and booking success over time.",
+        "Dashboard supports filters for date range, call status, and booking outcome.",
+        "Metrics match Supabase call and booking records."
+      ],
+      "dependsOn": [],
+      "status": "open"
+    },
+    {
+      "id": "FR-008",
+      "title": "CRM and Calendar: The dashboard must provide caller CRM and appointment tracking pages.",
+      "description": "The dashboard must provide caller CRM and appointment tracking pages.",
+      "acceptanceCriteria": [
+        "Operators can search by caller phone number and name.",
+        "Caller rows show phone number, caller name, last call time, status, and summary.",
+        "Operators can review transcripts and outcomes.",
+        "Calendar or appointment tracking views show time, caller, booking status, and source call."
+      ],
+      "dependsOn": [],
+      "status": "open"
+    },
+    {
+      "id": "FR-009",
+      "title": "Agent Configuration: The dashboard must let operators safely edit initial greeting, system prompt, and VAD threshold.",
+      "description": "The dashboard must let operators safely edit initial greeting, system prompt, and VAD threshold.",
+      "acceptanceCriteria": [
+        "Configuration is stored in Supabase with timestamps.",
+        "Invalid VAD threshold values are blocked.",
+        "New inbound calls use the latest active configuration.",
+        "Operators can update behavior without redeployment."
+      ],
+      "dependsOn": [],
+      "status": "open"
+    },
+    {
+      "id": "FR-010",
+      "title": "Security and Launch: The production dashboard must be password protected and deployable on Easypanel with environment-managed secrets.",
+      "description": "The production dashboard must be password protected and deployable on Easypanel with environment-managed secrets.",
+      "acceptanceCriteria": [
+        "Dashboard routes are inaccessible without DASHBOARD_PASSWORD authentication.",
+        "LiveKit, Supabase, OpenAI, Sarvam AI, Cal.com, and Fast2SMS secrets are not committed to source control.",
+        "Production deployment supports public domain and TLS through Easypanel.",
+        "Launch verification covers inbound calls, booking, SMS, dashboard analytics, CRM visibility, and database writes."
+      ],
+      "dependsOn": [],
+      "status": "open"
+    }
+  ],
+  "qualityGates": [
+    "Container smoke test verifying Supervisor starts both the dashboard and Python worker.",
+    "Database integration tests for call, transcript, booking, SMS, and agent configuration records.",
+    "Live inbound call end-to-end test through LiveKit SIP dispatch.",
+    "Voice conversation test covering greeting, VAD interruption behavior, transcript persistence, and prompt adherence.",
+    "Booking integration test against Cal.com using a controlled test calendar.",
+    "SMS integration test against Fast2SMS or a provider-safe test path that verifies duplicate prevention.",
+    "Dashboard tests for password protection, analytics filters, CRM search, appointment visibility, and configuration validation.",
+    "Launch verification on Easypanel with production-like environment variables."
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "total": 10,
+  "remaining": 10,
+  "quality_gates": [
+    "Container smoke test verifying Supervisor starts both the dashboard and Python worker.",
+    "Database integration tests for call, transcript, booking, SMS, and agent configuration records.",
+    "Live inbound call end-to-end test through LiveKit SIP dispatch.",
+    "Voice conversation test covering greeting, VAD interruption behavior, transcript persistence, and prompt adherence.",
+    "Booking integration test against Cal.com using a controlled test calendar.",
+    "SMS integration test against Fast2SMS or a provider-safe test path that verifies duplicate prevention.",
+    "Dashboard tests for password protection, analytics filters, CRM search, appointment visibility, and configuration validation.",
+    "Launch verification on Easypanel with production-like environment variables."
+  ],
+  "id": "FR-001",
+  "title": "Containerization: The platform must use a multi-stage Docker build with Python and Next.js dependency stages and a python:3.11-slim final runtime image."
+}

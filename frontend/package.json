@@ -1,0 +1,18 @@
+{
+  "name": "inbound-ai-voice-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev --hostname 0.0.0.0 --port 8000",
+    "start": "next start --hostname 0.0.0.0 --port 8000"
+  },
+  "dependencies": {
+    "next": "16.2.5",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "overrides": {
+    "postcss": "8.5.14"
+  }
+}
