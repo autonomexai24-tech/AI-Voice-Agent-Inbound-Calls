@@ -6,7 +6,8 @@ create table if not exists call_logs (
   start_time timestamptz not null default now(),
   duration integer,
   status text not null default 'started',
-  outcome text
+  outcome text,
+  created_at timestamptz not null default now()
 );
 
 create table if not exists transcripts (
@@ -28,9 +29,31 @@ create table if not exists agent_config (
   initial_greeting text not null,
   system_prompt text not null,
   vad_threshold numeric(4, 3) not null default 0.500,
+  language_code varchar(10) not null default 'en-IN',
   updated_at timestamptz not null default now(),
   constraint agent_config_vad_threshold_range
     check (vad_threshold >= 0 and vad_threshold <= 1)
+);
+
+alter table call_logs
+  add column if not exists created_at timestamptz not null default now();
+
+alter table agent_config
+  add column if not exists language_code varchar(10) not null default 'en-IN';
+
+insert into agent_config (
+  initial_greeting,
+  system_prompt,
+  vad_threshold,
+  language_code
+)
+select
+  'Hello, thanks for calling. How can I help you today?',
+  'You are a helpful inbound voice agent. Keep responses brief, natural, and focused on helping the caller.',
+  0.500,
+  'en-IN'
+where not exists (
+  select 1 from agent_config
 );
 
 create index if not exists idx_call_logs_phone_number

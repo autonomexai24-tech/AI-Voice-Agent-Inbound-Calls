@@ -37,6 +37,7 @@
 - Maintain SQL schemas for call logs, transcripts, bookings, SMS status, and agent configuration.
 
 **Execution steps:**
+- CRITICAL MANUAL STEP: Manually execute `schema.sql` in the self-hosted Supabase Studio SQL Editor before launching the dashboard or voice worker. The self-hosted environment blocks automated REST-based DDL execution, so tables and seed rows must be created through SQL Editor access.
 - Configure `SUPABASE_SELF_HOSTED_URL` with the internal Kong URI, such as `http://supabase-kong:8000` inside the VPS network.
 - Store `SUPABASE_SERVICE_ROLE_KEY` in Easypanel environment variables.
 - Store `SUPABASE_ANON_KEY` for browser-safe read/write operations only where appropriate.

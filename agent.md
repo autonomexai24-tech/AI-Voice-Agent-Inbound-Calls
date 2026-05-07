@@ -38,6 +38,10 @@ Future coding sessions must follow the constraints in this file unless the proje
 - Use `SUPABASE_ANON_KEY` only for browser-safe flows where appropriate.
 - Never expose service role keys in the Next.js client bundle.
 
+**Agent configuration:**
+- The `agent_config` table manages `initial_greeting`, `system_prompt`, `vad_threshold`, and `language_code`.
+- Use `language_code` to support English, Hindi, and Kannada voice behavior, with `en-IN` as the default unless the operator chooses another supported language.
+
 ## SMS Rules
 
 **Provider:**
