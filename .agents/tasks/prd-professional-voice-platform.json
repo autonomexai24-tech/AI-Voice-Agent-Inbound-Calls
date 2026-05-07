@@ -339,10 +339,10 @@
         "The production dashboard uses Next.js standalone output and does not require npm start or a dev server."
       ],
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "startedAt": "2026-05-07T09:03:12.683401+00:00",
-      "completedAt": null,
-      "updatedAt": "2026-05-07T09:03:12.683401+00:00"
+      "completedAt": "2026-05-07T09:09:56.155397+00:00",
+      "updatedAt": "2026-05-07T09:09:56.155397+00:00"
     },
     {
       "id": "FR-002",

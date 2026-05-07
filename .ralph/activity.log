@@ -1,7 +1,9 @@
 # Activity Log
 
 ## Run Summary
+- 2026-05-07 14:39:55 | run=20260507-143312-1404 | iter=1 | mode=build | story=FR-001 | duration=402s | status=success
 
 ## Events
 
 [2026-05-07 14:33:13] ITERATION 1 start (mode=build story=FR-001)
+[2026-05-07 14:39:54] ITERATION 1 end (duration=402s)
