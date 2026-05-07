@@ -74,17 +74,17 @@ def _booking_payload(name: str, phone: str, date_time: str) -> dict[str, Any]:
 
 async def _insert_booking_record(call_id: str, appointment_time: str) -> None:
     await asyncio.to_thread(
-        lambda: db.get_supabase()
-        .table("bookings")
-        .insert(
-            {
-                "call_id": call_id,
-                "appointment_time": appointment_time,
-                "status": "confirmed",
-                "sms_sent": False,
-            }
+        lambda: db.execute(
+            """
+            insert into bookings (call_id, appointment_time, status, sms_sent)
+            values (%s, %s, %s, %s)
+            on conflict (call_id) do update
+            set appointment_time = excluded.appointment_time,
+                status = excluded.status,
+                sms_sent = excluded.sms_sent
+            """,
+            (call_id, appointment_time, "confirmed", False),
         )
-        .execute()
     )
 
 

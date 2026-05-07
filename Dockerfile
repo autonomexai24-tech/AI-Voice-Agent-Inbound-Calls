@@ -38,7 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
-ENV PORT=8000
+ENV PORT=3000
 ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -50,7 +50,8 @@ COPY --from=frontend-builder /app/frontend/.next/standalone ./frontend/.next/sta
 COPY --from=frontend-builder /app/frontend/.next/static ./frontend/.next/standalone/.next/static
 COPY --from=frontend-builder /app/frontend/public ./frontend/.next/standalone/public
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+RUN chmod +x /app/start.sh
 
-EXPOSE 8000
+EXPOSE 3000
 
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["/app/start.sh"]

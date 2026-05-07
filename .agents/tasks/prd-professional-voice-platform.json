@@ -5,11 +5,11 @@
     "roadmap_file": "plan.md",
     "created_from_request": "Generate a PRD for building the Professional Inbound AI Voice Platform from the existing roadmap."
   },
-  "summary": "Build a production-ready inbound AI voice platform that receives SIP calls through LiveKit, runs a Python voice worker and Next.js operator dashboard in an Easypanel-deployable container, uses self-hosted Supabase as the system of record, powers multilingual conversations with OpenAI and Sarvam AI, books appointments through Cal.com, sends Fast2SMS confirmations, and exposes analytics, CRM, calendar, and agent configuration workflows.",
-  "problem_statement": "The current inbound AI voice system needs to become a deployable professional product rather than a loose collection of runtime scripts and setup notes. Business operators need a secure dashboard for monitoring calls, managing callers and appointments, adjusting agent behavior, and validating production outcomes, while the voice runtime needs reliable containerized deployment and integration with LiveKit, Supabase, OpenAI, Sarvam AI, Cal.com, and Fast2SMS.",
+  "summary": "Build a production-ready inbound AI voice platform that receives SIP calls through LiveKit, runs a Python voice worker and Next.js operator dashboard in an Easypanel-deployable container, uses plain PostgreSQL as the system of record, powers multilingual conversations with OpenAI and Sarvam AI, books appointments through Cal.com, sends Fast2SMS confirmations, and exposes analytics, CRM, calendar, and agent configuration workflows.",
+  "problem_statement": "The current inbound AI voice system needs to become a deployable professional product rather than a loose collection of runtime scripts and setup notes. Business operators need a secure dashboard for monitoring calls, managing callers and appointments, adjusting agent behavior, and validating production outcomes, while the voice runtime needs reliable containerized deployment and integration with LiveKit, PostgreSQL, OpenAI, Sarvam AI, Cal.com, and Fast2SMS.",
   "goals": [
     "Package the Python LiveKit voice worker and Next.js dashboard into a single Easypanel-ready Docker container.",
-    "Connect all backend data flows to self-hosted Supabase through the internal Kong route.",
+    "Connect all backend data flows to plain PostgreSQL through DATABASE_URL.",
     "Receive inbound SIP calls through LiveKit Cloud and persist the full call lifecycle.",
     "Use OpenAI for reasoning and Sarvam AI for STT/TTS voice interaction.",
     "Enable live appointment booking through Cal.com during calls.",
@@ -21,7 +21,7 @@
     "Do not build outbound calling workflows in this milestone.",
     "Do not replace LiveKit SIP with a different telephony provider.",
     "Do not create a multi-tenant billing or subscription system.",
-    "Do not expose Supabase service-role credentials to browser code.",
+    "Do not expose database credentials to browser code.",
     "Do not require local development servers in production."
   ],
   "personas": [
@@ -100,11 +100,11 @@
     {
       "id": "FR-002",
       "area": "Database",
-      "requirement": "The platform must use self-hosted Supabase through SUPABASE_SELF_HOSTED_URL and internal Kong routing as the system of record.",
+      "requirement": "The platform must use plain PostgreSQL through DATABASE_URL as the system of record.",
       "acceptance_criteria": [
-        "Backend call, booking, transcript, SMS, caller, and agent configuration records are written through the internal Supabase route.",
-        "Dashboard analytics and CRM data are read from Supabase.",
-        "SUPABASE_SERVICE_ROLE_KEY is only used by trusted backend or server-side code."
+        "Backend call, booking, transcript, SMS, caller, and agent configuration records are written through the internal PostgreSQL route.",
+        "Dashboard analytics and CRM data are read from PostgreSQL.",
+        "DATABASE_URL is only used by trusted backend or server-side code."
       ]
     },
     {
@@ -113,7 +113,7 @@
       "requirement": "The platform must receive inbound SIP calls through LiveKit Cloud and route them to the Python worker.",
       "acceptance_criteria": [
         "Inbound calls create LiveKit sessions.",
-        "Each call creates a unique Supabase call record.",
+        "Each call creates a unique PostgreSQL call record.",
         "Call failures are logged with actionable error information."
       ]
     },
@@ -135,7 +135,7 @@
       "acceptance_criteria": [
         "Bookings require caller confirmation before creation.",
         "Every booking is linked to a call record and caller phone number.",
-        "Booking ID, time, status, and metadata are persisted in Supabase.",
+        "Booking ID, time, status, and metadata are persisted in PostgreSQL.",
         "Booking failures are handled gracefully in the conversation."
       ]
     },
@@ -158,7 +158,7 @@
         "Dashboard shows Total Calls, Booking Rate, Average Duration, and Missed or Failed Calls.",
         "Dashboard includes charts for call volume and booking success over time.",
         "Dashboard supports filters for date range, call status, and booking outcome.",
-        "Metrics match Supabase call and booking records."
+        "Metrics match PostgreSQL call and booking records."
       ]
     },
     {
@@ -177,7 +177,7 @@
       "area": "Agent Configuration",
       "requirement": "The dashboard must let operators safely edit initial greeting, system prompt, and VAD threshold.",
       "acceptance_criteria": [
-        "Configuration is stored in Supabase with timestamps.",
+        "Configuration is stored in PostgreSQL with timestamps.",
         "Invalid VAD threshold values are blocked.",
         "New inbound calls use the latest active configuration.",
         "Operators can update behavior without redeployment."
@@ -189,7 +189,7 @@
       "requirement": "The production dashboard must be password protected and deployable on Easypanel with environment-managed secrets.",
       "acceptance_criteria": [
         "Dashboard routes are inaccessible without DASHBOARD_PASSWORD authentication.",
-        "LiveKit, Supabase, OpenAI, Sarvam AI, Cal.com, and Fast2SMS secrets are not committed to source control.",
+        "LiveKit, PostgreSQL, OpenAI, Sarvam AI, Cal.com, and Fast2SMS secrets are not committed to source control.",
         "Production deployment supports public domain and TLS through Easypanel.",
         "Launch verification covers inbound calls, booking, SMS, dashboard analytics, CRM visibility, and database writes."
       ]
@@ -211,8 +211,8 @@
       "created_timestamp"
     ],
     "sensitive_data_rules": [
-      "Service role credentials must remain server-side.",
-      "Browser code may only use browser-safe Supabase anon credentials where appropriate.",
+      "Database credentials must remain server-side.",
+      "Browser code must never receive DATABASE_URL.",
       "Production secrets must be provided through Easypanel environment variables."
     ]
   },
@@ -222,8 +222,8 @@
       "purpose": "Inbound SIP trunking, call sessions, and dispatch to the Python voice worker."
     },
     {
-      "system": "Self-hosted Supabase",
-      "purpose": "Database API gateway and persistent storage for calls, callers, transcripts, bookings, notifications, analytics, and configuration."
+      "system": "Plain PostgreSQL",
+      "purpose": "Persistent storage for calls, callers, transcripts, bookings, notifications, analytics, and configuration."
     },
     {
       "system": "OpenAI",
@@ -249,16 +249,14 @@
   "technical_constraints": [
     "Final container runtime must be based on python:3.11-slim.",
     "Next.js production build must use output: \"standalone\".",
-    "Dashboard must listen on port 8000 for Easypanel routing.",
+    "Dashboard must listen on port 3000 for Easypanel routing.",
     "Python voice worker and dashboard must run side-by-side under Supervisor.",
-    "Supabase traffic should use internal VPS routing through SUPABASE_SELF_HOSTED_URL.",
+    "PostgreSQL traffic should use internal Docker routing through DATABASE_URL.",
     "The platform must fit KVM2 VPS memory constraints by avoiding development servers and unnecessary runtime build artifacts."
   ],
   "environment_variables": [
     "DASHBOARD_PASSWORD",
-    "SUPABASE_SELF_HOSTED_URL",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "SUPABASE_ANON_KEY",
+    "DATABASE_URL",
     "LIVEKIT_URL",
     "LIVEKIT_API_KEY",
     "LIVEKIT_API_SECRET",
@@ -286,11 +284,11 @@
     "A production container starts successfully in Easypanel.",
     "Dashboard is reachable over the configured domain and TLS and protected by password authentication.",
     "Inbound SIP call reaches the LiveKit session and Python worker.",
-    "Agent loads current Supabase configuration at call start.",
+    "Agent loads current PostgreSQL configuration at call start.",
     "Conversation transcript, summary, duration, outcome, and booking state are persisted.",
     "Agent can complete a Cal.com booking during a call.",
     "Fast2SMS sends one confirmation for a confirmed booking.",
-    "Analytics, CRM, calendar, and configuration pages display accurate Supabase-backed data."
+    "Analytics, CRM, calendar, and configuration pages display accurate PostgreSQL-backed data."
   ],
   "testing_requirements": [
     "Container smoke test verifying Supervisor starts both the dashboard and Python worker.",
@@ -312,8 +310,8 @@
       "mitigation": "Use standalone Next.js output, multi-stage Docker builds, and node server.js from .next/standalone."
     },
     {
-      "risk": "Service role key exposure would compromise Supabase data.",
-      "mitigation": "Restrict service-role usage to backend/server code and verify it is absent from client bundles."
+      "risk": "Database credential exposure would compromise PostgreSQL data.",
+      "mitigation": "Restrict DATABASE_URL usage to backend/server code and verify it is absent from client bundles."
     },
     {
       "risk": "Duplicate SMS sends could create poor caller experience and extra cost.",
@@ -346,12 +344,12 @@
     },
     {
       "id": "FR-002",
-      "title": "Database: The platform must use self-hosted Supabase through SUPABASE_SELF_HOSTED_URL and internal Kong routing as the system of record.",
-      "description": "The platform must use self-hosted Supabase through SUPABASE_SELF_HOSTED_URL and internal Kong routing as the system of record.",
+      "title": "Database: The platform must use plain PostgreSQL through DATABASE_URL as the system of record.",
+      "description": "The platform must use plain PostgreSQL through DATABASE_URL as the system of record.",
       "acceptanceCriteria": [
-        "Backend call, booking, transcript, SMS, caller, and agent configuration records are written through the internal Supabase route.",
-        "Dashboard analytics and CRM data are read from Supabase.",
-        "SUPABASE_SERVICE_ROLE_KEY is only used by trusted backend or server-side code."
+        "Backend call, booking, transcript, SMS, caller, and agent configuration records are written through the internal PostgreSQL route.",
+        "Dashboard analytics and CRM data are read from PostgreSQL.",
+        "DATABASE_URL is only used by trusted backend or server-side code."
       ],
       "dependsOn": [],
       "status": "open"
@@ -362,7 +360,7 @@
       "description": "The platform must receive inbound SIP calls through LiveKit Cloud and route them to the Python worker.",
       "acceptanceCriteria": [
         "Inbound calls create LiveKit sessions.",
-        "Each call creates a unique Supabase call record.",
+        "Each call creates a unique PostgreSQL call record.",
         "Call failures are logged with actionable error information."
       ],
       "dependsOn": [],
@@ -388,7 +386,7 @@
       "acceptanceCriteria": [
         "Bookings require caller confirmation before creation.",
         "Every booking is linked to a call record and caller phone number.",
-        "Booking ID, time, status, and metadata are persisted in Supabase.",
+        "Booking ID, time, status, and metadata are persisted in PostgreSQL.",
         "Booking failures are handled gracefully in the conversation."
       ],
       "dependsOn": [],
@@ -415,7 +413,7 @@
         "Dashboard shows Total Calls, Booking Rate, Average Duration, and Missed or Failed Calls.",
         "Dashboard includes charts for call volume and booking success over time.",
         "Dashboard supports filters for date range, call status, and booking outcome.",
-        "Metrics match Supabase call and booking records."
+        "Metrics match PostgreSQL call and booking records."
       ],
       "dependsOn": [],
       "status": "open"
@@ -438,7 +436,7 @@
       "title": "Agent Configuration: The dashboard must let operators safely edit initial greeting, system prompt, and VAD threshold.",
       "description": "The dashboard must let operators safely edit initial greeting, system prompt, and VAD threshold.",
       "acceptanceCriteria": [
-        "Configuration is stored in Supabase with timestamps.",
+        "Configuration is stored in PostgreSQL with timestamps.",
         "Invalid VAD threshold values are blocked.",
         "New inbound calls use the latest active configuration.",
         "Operators can update behavior without redeployment."
@@ -452,7 +450,7 @@
       "description": "The production dashboard must be password protected and deployable on Easypanel with environment-managed secrets.",
       "acceptanceCriteria": [
         "Dashboard routes are inaccessible without DASHBOARD_PASSWORD authentication.",
-        "LiveKit, Supabase, OpenAI, Sarvam AI, Cal.com, and Fast2SMS secrets are not committed to source control.",
+        "LiveKit, PostgreSQL, OpenAI, Sarvam AI, Cal.com, and Fast2SMS secrets are not committed to source control.",
         "Production deployment supports public domain and TLS through Easypanel.",
         "Launch verification covers inbound calls, booking, SMS, dashboard analytics, CRM visibility, and database writes."
       ],

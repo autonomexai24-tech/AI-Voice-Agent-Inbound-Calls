@@ -1,5 +1,5 @@
 import "server-only";
-import { createQueryAbortSignal, getSupabaseClient } from "./supabase-server";
+import { queryPostgres } from "./postgres-server";
 
 type CallLogRow = {
   id: string;
@@ -51,7 +51,7 @@ export type OperationsResult<T> = {
 function configurationError<T>(): OperationsResult<T> {
   return {
     rows: [],
-    error: "Supabase service role environment variables are not configured."
+    error: "DATABASE_URL environment variable is not configured."
   };
 }
 
@@ -73,27 +73,16 @@ function buildTranscriptSummary(transcripts: TranscriptRow[]) {
 }
 
 export async function getCrmCalls(): Promise<OperationsResult<CrmCallRow>> {
-  const supabase = getSupabaseClient();
-
-  if (!supabase) {
-    return configurationError<CrmCallRow>();
-  }
-
-  const timeout = createQueryAbortSignal();
-
   try {
-    const callsResult = await supabase
-      .from("call_logs")
-      .select("id,phone_number,start_time,duration,status,outcome")
-      .order("start_time", { ascending: false, nullsFirst: false })
-      .limit(50)
-      .abortSignal(timeout.signal);
-
-    if (callsResult.error) {
-      throw callsResult.error;
-    }
-
-    const calls = (callsResult.data ?? []) as CallLogRow[];
+    const callsResult = await queryPostgres<CallLogRow>(
+      `
+      select id, phone_number, start_time, duration, status, outcome
+      from call_logs
+      order by start_time desc nulls last
+      limit 50
+      `
+    );
+    const calls = callsResult.rows;
     const callIds = calls.map((call) => call.id);
 
     if (callIds.length === 0) {
@@ -101,32 +90,34 @@ export async function getCrmCalls(): Promise<OperationsResult<CrmCallRow>> {
     }
 
     const [transcriptsResult, bookingsResult] = await Promise.all([
-      supabase
-        .from("transcripts")
-        .select("call_id,speaker,text,timestamp")
-        .in("call_id", callIds)
-        .order("timestamp", { ascending: true, nullsFirst: false })
-        .abortSignal(timeout.signal),
-      supabase.from("bookings").select("call_id,status,appointment_time").in("call_id", callIds).abortSignal(timeout.signal)
+      queryPostgres<TranscriptRow>(
+        `
+        select call_id, speaker, text, timestamp
+        from transcripts
+        where call_id = any($1::uuid[])
+        order by timestamp asc nulls last
+        `,
+        [callIds]
+      ),
+      queryPostgres<BookingRow>(
+        `
+        select call_id, status, appointment_time
+        from bookings
+        where call_id = any($1::uuid[])
+        `,
+        [callIds]
+      )
     ]);
 
-    if (transcriptsResult.error) {
-      throw transcriptsResult.error;
-    }
-
-    if (bookingsResult.error) {
-      throw bookingsResult.error;
-    }
-
     const transcriptsByCall = new Map<string, TranscriptRow[]>();
-    for (const transcript of (transcriptsResult.data ?? []) as TranscriptRow[]) {
+    for (const transcript of transcriptsResult.rows) {
       const existing = transcriptsByCall.get(transcript.call_id) ?? [];
       existing.push(transcript);
       transcriptsByCall.set(transcript.call_id, existing);
     }
 
     const bookingStatusByCall = new Map<string, string>();
-    for (const booking of (bookingsResult.data ?? []) as BookingRow[]) {
+    for (const booking of bookingsResult.rows) {
       bookingStatusByCall.set(booking.call_id, booking.status ?? "pending");
     }
 
@@ -147,56 +138,34 @@ export async function getCrmCalls(): Promise<OperationsResult<CrmCallRow>> {
       rows: [],
       error: error instanceof Error ? error.message : "Unable to load call records."
     };
-  } finally {
-    timeout.cancel();
   }
 }
 
 export async function getConfirmedBookings(): Promise<OperationsResult<CalendarBookingRow>> {
-  const supabase = getSupabaseClient();
-
-  if (!supabase) {
-    return configurationError<CalendarBookingRow>();
-  }
-
-  const timeout = createQueryAbortSignal();
-
   try {
-    const bookingsResult = await supabase
-      .from("bookings")
-      .select("call_id,appointment_time,status,sms_sent")
-      .eq("status", "confirmed")
-      .order("appointment_time", { ascending: true, nullsFirst: false })
-      .limit(50)
-      .abortSignal(timeout.signal);
-
-    if (bookingsResult.error) {
-      throw bookingsResult.error;
-    }
-
-    const bookings = (bookingsResult.data ?? []) as BookingRow[];
+    const bookingsResult = await queryPostgres<BookingRow>(
+      `
+      select call_id, appointment_time, status, sms_sent
+      from bookings
+      where status = $1
+      order by appointment_time asc nulls last
+      limit 50
+      `,
+      ["confirmed"]
+    );
+    const bookings = bookingsResult.rows;
     const callIds = bookings.map((booking) => booking.call_id);
 
     if (callIds.length === 0) {
       return { rows: [] };
     }
 
-    const callsResult = await supabase
-      .from("call_logs")
-      .select("id,phone_number")
-      .in("id", callIds)
-      .abortSignal(timeout.signal);
-
-    if (callsResult.error) {
-      throw callsResult.error;
-    }
-
-    const phoneByCall = new Map(
-      ((callsResult.data ?? []) as Pick<CallLogRow, "id" | "phone_number">[]).map((call) => [
-        call.id,
-        call.phone_number ?? "Unknown"
-      ])
+    const callsResult = await queryPostgres<Pick<CallLogRow, "id" | "phone_number">>(
+      "select id, phone_number from call_logs where id = any($1::uuid[])",
+      [callIds]
     );
+
+    const phoneByCall = new Map(callsResult.rows.map((call) => [call.id, call.phone_number ?? "Unknown"]));
 
     return {
       rows: bookings.map((booking) => ({
@@ -212,7 +181,5 @@ export async function getConfirmedBookings(): Promise<OperationsResult<CalendarB
       rows: [],
       error: error instanceof Error ? error.message : "Unable to load confirmed bookings."
     };
-  } finally {
-    timeout.cancel();
   }
 }

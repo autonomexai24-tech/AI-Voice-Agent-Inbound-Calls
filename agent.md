@@ -27,16 +27,16 @@ Future coding sessions must follow the constraints in this file unless the proje
 
 ## Database Rules
 
-**Self-hosted Supabase only:**
-- Always target the self-hosted Supabase instance.
-- Route Supabase traffic through the internal VPS/Kong route using `SUPABASE_SELF_HOSTED_URL`.
-- Prefer internal service DNS or private network routing in production, such as `http://supabase-kong:8000`.
-- Do not hardcode public Supabase project URLs unless explicitly required for a separate environment.
+**Plain PostgreSQL only:**
+- Always target the Easypanel-managed PostgreSQL database.
+- Route database traffic through the internal Docker service name using `DATABASE_URL`.
+- Prefer internal service DNS in production, such as `postgresql://postgres:<password>@voice-agent-db:5432/postgres`.
+- Do not use Supabase SDKs or Supabase service-role routing for application persistence.
 
 **Credential handling:**
-- Use `SUPABASE_SERVICE_ROLE_KEY` only in trusted backend/server-side code.
-- Use `SUPABASE_ANON_KEY` only for browser-safe flows where appropriate.
-- Never expose service role keys in the Next.js client bundle.
+- Use `DATABASE_URL` only in trusted backend/server-side code.
+- Never expose database credentials in the Next.js client bundle.
+- Do not commit production database passwords to source control.
 
 **Agent configuration:**
 - The `agent_config` table manages `initial_greeting`, `system_prompt`, `vad_threshold`, and `language_code`.

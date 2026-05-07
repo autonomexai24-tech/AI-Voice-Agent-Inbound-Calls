@@ -1,5 +1,5 @@
 import "server-only";
-import { createQueryAbortSignal, getSupabaseClient } from "./supabase-server";
+import { queryPostgres } from "./postgres-server";
 
 export type AgentConfig = {
   id: string | null;
@@ -47,39 +47,23 @@ function normalizeConfig(row: AgentConfigRow | null): AgentConfig {
 }
 
 export async function getActiveAgentConfig(): Promise<AgentConfigResult> {
-  const supabase = getSupabaseClient();
-
-  if (!supabase) {
-    return {
-      config: defaultAgentConfig,
-      error: "Supabase service role environment variables are not configured."
-    };
-  }
-
-  const timeout = createQueryAbortSignal();
-
   try {
-    const result = await supabase
-      .from("agent_config")
-      .select("id,initial_greeting,system_prompt,vad_threshold,updated_at")
-      .order("updated_at", { ascending: false, nullsFirst: false })
-      .limit(1)
-      .abortSignal(timeout.signal)
-      .maybeSingle();
-
-    if (result.error) {
-      throw result.error;
-    }
+    const result = await queryPostgres<AgentConfigRow>(
+      `
+      select id, initial_greeting, system_prompt, vad_threshold, updated_at
+      from agent_config
+      order by updated_at desc nulls last
+      limit 1
+      `
+    );
 
     return {
-      config: normalizeConfig((result.data as AgentConfigRow | null) ?? null)
+      config: normalizeConfig(result.rows[0] ?? null)
     };
   } catch (error) {
     return {
       config: defaultAgentConfig,
       error: error instanceof Error ? error.message : "Unable to load agent configuration."
     };
-  } finally {
-    timeout.cancel();
   }
 }

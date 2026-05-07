@@ -169,27 +169,26 @@ def _coerce_agent_config(row: dict[str, Any] | None) -> AgentConfig:
 
 
 def fetch_active_agent_config() -> AgentConfig:
-    """Load the latest agent configuration through the service-role Supabase client."""
+    """Load the latest agent configuration through PostgreSQL."""
     try:
-        result = (
-            db.get_supabase()
-            .table("agent_config")
-            .select("initial_greeting, system_prompt, vad_threshold, updated_at")
-            .order("updated_at", desc=True)
-            .limit(1)
-            .execute()
+        row = db.fetch_one(
+            """
+            select initial_greeting, system_prompt, vad_threshold, updated_at
+            from agent_config
+            order by updated_at desc nulls last
+            limit 1
+            """
         )
     except Exception as exc:
         logger.error("[CONFIG] Failed to fetch agent_config: %s", exc)
         return _coerce_agent_config(None)
 
-    rows = result.data or []
-    if not rows:
+    if not row:
         logger.warning("[CONFIG] No agent_config rows found; using defaults")
         return _coerce_agent_config(None)
 
-    config = _coerce_agent_config(rows[0])
-    logger.info("[CONFIG] Loaded active agent_config updated_at=%s", rows[0].get("updated_at"))
+    config = _coerce_agent_config(row)
+    logger.info("[CONFIG] Loaded active agent_config updated_at=%s", row.get("updated_at"))
     return config
 
 
@@ -197,25 +196,19 @@ def create_call_log(caller_phone: str | None) -> tuple[str | None, datetime]:
     phone_number = caller_phone or "unknown"
     started_at = datetime.now(timezone.utc)
     try:
-        result = (
-            db.get_supabase()
-            .table("call_logs")
-            .insert(
-                {
-                    "phone_number": phone_number,
-                    "start_time": started_at.isoformat(),
-                    "status": "connected",
-                    "outcome": "in_progress",
-                }
-            )
-            .execute()
+        row = db.execute_returning_one(
+            """
+            insert into call_logs (phone_number, start_time, status, outcome)
+            values (%s, %s, %s, %s)
+            returning id
+            """,
+            (phone_number, started_at, "connected", "in_progress"),
         )
     except Exception as exc:
         logger.error("[DB] Failed to create call_logs row: %s", exc)
         return None, started_at
 
-    rows = result.data or []
-    call_id = rows[0].get("id") if rows else None
+    call_id = str(row["id"]) if row and row.get("id") else None
     if call_id:
         logger.info("[DB] Created call_logs row id=%s", call_id)
     return call_id, started_at
@@ -223,17 +216,15 @@ def create_call_log(caller_phone: str | None) -> tuple[str | None, datetime]:
 
 async def _fetch_confirmed_booking(call_id: str) -> dict[str, Any] | None:
     def _fetch() -> dict[str, Any] | None:
-        result = (
-            db.get_supabase()
-            .table("bookings")
-            .select("call_id, appointment_time, status, sms_sent")
-            .eq("call_id", call_id)
-            .eq("status", "confirmed")
-            .limit(1)
-            .execute()
+        return db.fetch_one(
+            """
+            select call_id, appointment_time, status, sms_sent
+            from bookings
+            where call_id = %s and status = %s
+            limit 1
+            """,
+            (call_id, "confirmed"),
         )
-        rows = result.data or []
-        return rows[0] if rows else None
 
     return await asyncio.to_thread(_fetch)
 
@@ -261,13 +252,14 @@ async def complete_call_log(
             final_outcome = "completed"
 
     def _update() -> None:
-        db.get_supabase().table("call_logs").update(
-            {
-                "duration": duration,
-                "status": status,
-                "outcome": final_outcome,
-            }
-        ).eq("id", call_id).execute()
+        db.execute(
+            """
+            update call_logs
+            set duration = %s, status = %s, outcome = %s
+            where id = %s
+            """,
+            (duration, status, final_outcome, call_id),
+        )
 
     try:
         await asyncio.to_thread(_update)
@@ -320,9 +312,7 @@ async def send_post_call_booking_sms(call_id: str | None, caller_phone: str | No
         return
 
     def _mark_sent() -> None:
-        db.get_supabase().table("bookings").update({"sms_sent": True}).eq(
-            "call_id", call_id
-        ).execute()
+        db.execute("update bookings set sms_sent = true where call_id = %s", (call_id,))
 
     try:
         await asyncio.to_thread(_mark_sent)
@@ -353,14 +343,13 @@ async def log_transcript_turn(call_id: str, speaker: str, text: str) -> None:
         return
 
     def _insert() -> None:
-        db.get_supabase().table("transcripts").insert(
-            {
-                "call_id": call_id,
-                "speaker": speaker,
-                "text": text,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        ).execute()
+        db.execute(
+            """
+            insert into transcripts (call_id, speaker, text, timestamp)
+            values (%s, %s, %s, %s)
+            """,
+            (call_id, speaker, text, datetime.now(timezone.utc)),
+        )
 
     try:
         await asyncio.to_thread(_insert)

@@ -28,26 +28,26 @@
 
 ## Part 2: Database Layer
 
-**Goal:** Connect the platform to self-hosted Supabase through internal VPS routing.
+**Goal:** Connect the platform to a single Easypanel-managed PostgreSQL database through internal Docker routing.
 
 **Scope:**
-- Use Supabase self-hosted Kong as the single database API gateway.
-- Route application traffic through `SUPABASE_SELF_HOSTED_URL`.
-- Use `SUPABASE_SERVICE_ROLE_KEY` only on trusted backend/server code.
+- Use plain PostgreSQL as the system of record.
+- Route application traffic through `DATABASE_URL`.
+- Keep `DATABASE_URL` only on trusted backend/server code.
 - Maintain SQL schemas for call logs, transcripts, bookings, SMS status, and agent configuration.
 
 **Execution steps:**
-- CRITICAL MANUAL STEP: Manually execute `schema.sql` in the self-hosted Supabase Studio SQL Editor before launching the dashboard or voice worker. The self-hosted environment blocks automated REST-based DDL execution, so tables and seed rows must be created through SQL Editor access.
-- Configure `SUPABASE_SELF_HOSTED_URL` with the internal Kong URI, such as `http://supabase-kong:8000` inside the VPS network.
-- Store `SUPABASE_SERVICE_ROLE_KEY` in Easypanel environment variables.
-- Store `SUPABASE_ANON_KEY` for browser-safe read/write operations only where appropriate.
+- DATABASE SETUP COMPLETE: The architecture has shifted away from self-hosted Supabase to a single Easypanel PostgreSQL service.
+- Configure `DATABASE_URL` with the internal PostgreSQL URI, such as `postgresql://postgres:<password>@voice-agent-db:5432/postgres`.
+- Store `DATABASE_URL` in Easypanel environment variables for the app container.
+- Initialize tables by running `python init_db.py`; the Docker startup script also runs this automatically before Supervisor starts.
 - Create tables for inbound calls, caller profiles, booking records, transcripts, agent settings, and notification events.
 - Add indexes on phone number, call start time, booking status, and created timestamp.
 
 **Acceptance criteria:**
-- Backend writes call events to Supabase through the internal Kong route.
-- Dashboard reads analytics and CRM data from Supabase.
-- Service role credentials are never exposed in client-side bundles.
+- Backend writes call events to PostgreSQL through `DATABASE_URL`.
+- Dashboard reads analytics and CRM data from PostgreSQL.
+- Database credentials are never exposed in client-side bundles.
 
 ## Part 3: Inbound Orchestration
 
@@ -62,13 +62,13 @@
 - Connect the SIP provider to LiveKit Cloud.
 - Configure inbound dispatch rules for the business phone number.
 - Start the Python LiveKit worker from the container.
-- Load agent settings from Supabase at call start.
+- Load agent settings from PostgreSQL at call start.
 - Persist call metadata when a call enters the system.
 - Persist final transcript, summary, duration, outcome, and booking state after the call ends.
 
 **Acceptance criteria:**
 - Inbound calls reliably create LiveKit sessions.
-- Each call gets a unique call record in Supabase.
+- Each call gets a unique call record in PostgreSQL.
 - Failed call sessions are logged with actionable error information.
 
 ## Part 4: AI Voice Brain
@@ -102,13 +102,13 @@
 **Scope:**
 - Integrate Cal.com as the booking system.
 - Allow the AI agent to check availability, propose slots, and create bookings.
-- Persist booking details in Supabase.
+- Persist booking details in PostgreSQL.
 
 **Execution steps:**
 - Configure Cal.com API credentials as environment variables.
 - Define booking tool inputs for caller name, phone number, desired time, appointment type, and notes.
 - Validate caller confirmation before final booking creation.
-- Write booking ID, time, status, and metadata to Supabase.
+- Write booking ID, time, status, and metadata to PostgreSQL.
 - Return booking confirmation details to the voice agent for spoken confirmation.
 
 **Acceptance criteria:**
@@ -123,7 +123,7 @@
 **Scope:**
 - Use Fast2SMS strictly for post-booking notifications.
 - Send booking details after the call ends or after booking finalization.
-- Track notification status in Supabase.
+- Track notification status in PostgreSQL.
 
 **Execution steps:**
 - Store `FAST2SMS_API_KEY` in Easypanel environment variables.
@@ -151,11 +151,11 @@
 - Create analytics cards for Total Calls, Booking Rate, Average Duration, and Missed/Failed Calls.
 - Add charts for call volume and booking success over time.
 - Add filters for date range, call status, and booking outcome.
-- Fetch analytics from Supabase through secure server-side routes where needed.
+- Fetch analytics from PostgreSQL through secure server-side routes where needed.
 
 **Acceptance criteria:**
 - Dashboard loads quickly on Easypanel.
-- Metrics match Supabase call and booking data.
+- Metrics match PostgreSQL call and booking data.
 - UI is simple, spacious, and professional.
 
 ## Part 8: Next.js CRM & Calendar

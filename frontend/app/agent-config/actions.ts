@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createQueryAbortSignal, getSupabaseClient } from "../../lib/supabase-server";
+import { queryPostgres } from "../../lib/postgres-server";
 
 export type AgentConfigActionState = {
   status: "idle" | "success" | "error";
@@ -33,36 +33,33 @@ export async function saveAgentConfig(
   _previousState: AgentConfigActionState,
   formData: FormData
 ): Promise<AgentConfigActionState> {
-  const supabase = getSupabaseClient();
-
-  if (!supabase) {
-    return {
-      status: "error",
-      message: "Supabase service role environment variables are not configured."
-    };
-  }
-
   try {
     const id = String(formData.get("id") ?? "").trim();
-    const payload = {
-      initial_greeting: readRequiredText(formData, "initialGreeting", "Initial greeting"),
-      system_prompt: readRequiredText(formData, "systemPrompt", "System prompt"),
-      vad_threshold: readVadThreshold(formData),
-      updated_at: new Date().toISOString()
-    };
+    const initialGreeting = readRequiredText(formData, "initialGreeting", "Initial greeting");
+    const systemPrompt = readRequiredText(formData, "systemPrompt", "System prompt");
+    const vadThreshold = readVadThreshold(formData);
+    const updatedAt = new Date();
 
-    const timeout = createQueryAbortSignal();
-
-    try {
-      const result = id
-        ? await supabase.from("agent_config").update(payload).eq("id", id).abortSignal(timeout.signal)
-        : await supabase.from("agent_config").insert(payload).abortSignal(timeout.signal);
-
-      if (result.error) {
-        throw result.error;
-      }
-    } finally {
-      timeout.cancel();
+    if (id) {
+      await queryPostgres(
+        `
+        update agent_config
+        set initial_greeting = $1,
+            system_prompt = $2,
+            vad_threshold = $3,
+            updated_at = $4
+        where id = $5
+        `,
+        [initialGreeting, systemPrompt, vadThreshold, updatedAt, id]
+      );
+    } else {
+      await queryPostgres(
+        `
+        insert into agent_config (initial_greeting, system_prompt, vad_threshold, updated_at)
+        values ($1, $2, $3, $4)
+        `,
+        [initialGreeting, systemPrompt, vadThreshold, updatedAt]
+      );
     }
 
     revalidatePath("/agent-config");

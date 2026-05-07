@@ -1,32 +1,62 @@
 import os
-from functools import lru_cache
+from contextlib import contextmanager
+from typing import Any, Iterator, Sequence
 
-from supabase import Client, create_client
-
-
-SUPABASE_URL_ENV = "SUPABASE_SELF_HOSTED_URL"
-SUPABASE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 
-class SupabaseConfigError(RuntimeError):
-    """Raised when required Supabase service-role configuration is missing."""
+DATABASE_URL_ENV = "DATABASE_URL"
 
 
-def _required_env(name: str) -> str:
-    value = os.environ.get(name, "").strip()
+class DatabaseConfigError(RuntimeError):
+    pass
+
+
+def _required_database_url() -> str:
+    value = os.environ.get(DATABASE_URL_ENV, "").strip()
     if not value:
-        raise SupabaseConfigError(f"Missing required environment variable: {name}")
+        raise DatabaseConfigError(f"Missing required environment variable: {DATABASE_URL_ENV}")
     return value
 
 
-@lru_cache(maxsize=1)
-def get_supabase() -> Client:
-    """Return the service-role Supabase client for the self-hosted Kong URL."""
-    url = _required_env(SUPABASE_URL_ENV)
-    service_role_key = _required_env(SUPABASE_KEY_ENV)
-    return create_client(url, service_role_key)
+@contextmanager
+def get_connection() -> Iterator[Any]:
+    connection = psycopg2.connect(_required_database_url())
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
-def reset_supabase_client_cache() -> None:
-    """Clear the cached client after environment changes in tests or scripts."""
-    get_supabase.cache_clear()
+def fetch_all(query: str, params: Sequence[Any] = ()) -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+
+def fetch_one(query: str, params: Sequence[Any] = ()) -> dict[str, Any] | None:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(query, params)
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+
+def execute(query: str, params: Sequence[Any] = ()) -> None:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+
+
+def execute_returning_one(query: str, params: Sequence[Any] = ()) -> dict[str, Any] | None:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(query, params)
+            row = cursor.fetchone()
+            return dict(row) if row else None

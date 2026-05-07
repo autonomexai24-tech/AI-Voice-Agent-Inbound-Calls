@@ -1,5 +1,5 @@
 import "server-only";
-import { createQueryAbortSignal, getSupabaseClient } from "./supabase-server";
+import { queryPostgres } from "./postgres-server";
 
 type CallLogRow = {
   duration: number | null;
@@ -30,33 +30,14 @@ const emptyMetrics: DashboardMetrics = {
 };
 
 export async function getDashboardMetrics(): Promise<DashboardMetrics> {
-  const supabase = getSupabaseClient();
-
-  if (!supabase) {
-    return {
-      ...emptyMetrics,
-      error: "Supabase service role environment variables are not configured."
-    };
-  }
-
-  const timeout = createQueryAbortSignal();
-
   try {
     const [callsResult, bookingsResult] = await Promise.all([
-      supabase.from("call_logs").select("duration,status").abortSignal(timeout.signal),
-      supabase.from("bookings").select("call_id").eq("status", "confirmed").abortSignal(timeout.signal)
+      queryPostgres<CallLogRow>("select duration, status from call_logs"),
+      queryPostgres<BookingRow>("select call_id from bookings where status = $1", ["confirmed"])
     ]);
 
-    if (callsResult.error) {
-      throw callsResult.error;
-    }
-
-    if (bookingsResult.error) {
-      throw bookingsResult.error;
-    }
-
-    const calls = (callsResult.data ?? []) as CallLogRow[];
-    const bookings = (bookingsResult.data ?? []) as BookingRow[];
+    const calls = callsResult.rows;
+    const bookings = bookingsResult.rows;
     const totalCalls = calls.length;
     const confirmedBookings = bookings.length;
     const failedStatuses = new Set(["failed", "missed", "error"]);
@@ -84,7 +65,5 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       configured: true,
       error: message
     };
-  } finally {
-    timeout.cancel();
   }
 }

@@ -8,7 +8,6 @@
   "calcom_api_key": "",
   "calcom_event_type_id": "",
   "fast2sms_api_key": "",
-  "supabase_self_hosted_url": "",
-  "supabase_service_role_key": "",
+  "database_url": "",
   "dashboard_password": ""
 }
