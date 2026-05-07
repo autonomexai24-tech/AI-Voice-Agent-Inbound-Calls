@@ -1,6 +1,7 @@
 import os
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import psycopg2
 
@@ -11,10 +12,24 @@ MAX_ATTEMPTS = 30
 RETRY_DELAY_SECONDS = 2
 
 
+def _validate_database_url(database_url: str) -> None:
+    parsed = urlsplit(database_url)
+    if not parsed.scheme or not parsed.netloc:
+        raise RuntimeError("DATABASE_URL must be a full PostgreSQL connection URL.")
+
+    userinfo = parsed.netloc.rsplit("@", 1)[0] if "@" in parsed.netloc else ""
+    if "@" in userinfo:
+        raise RuntimeError(
+            "DATABASE_URL contains an unescaped @ in the username/password section. "
+            "Percent-encode @ as %40 in the database password."
+        )
+
+
 def main() -> None:
     database_url = os.environ.get(DATABASE_URL_ENV, "").strip()
     if not database_url:
         raise RuntimeError(f"Missing required environment variable: {DATABASE_URL_ENV}")
+    _validate_database_url(database_url)
 
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
     if not schema_sql.strip():

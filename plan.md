@@ -39,6 +39,7 @@
 **Execution steps:**
 - DATABASE SETUP COMPLETE: The architecture has shifted away from self-hosted Supabase to a single Easypanel PostgreSQL service.
 - Configure `DATABASE_URL` with the internal PostgreSQL URI, such as `postgresql://postgres:<password>@voice-agent-db:5432/postgres`.
+- Percent-encode special characters in the database password before saving `DATABASE_URL`; for example, `@` must be written as `%40`.
 - Store `DATABASE_URL` in Easypanel environment variables for the app container.
 - Initialize tables by running `python init_db.py`; the Docker startup script also runs this automatically before Supervisor starts.
 - Create tables for inbound calls, caller profiles, booking records, transcripts, agent settings, and notification events.

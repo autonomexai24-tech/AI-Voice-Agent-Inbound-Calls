@@ -31,6 +31,7 @@ Future coding sessions must follow the constraints in this file unless the proje
 - Always target the Easypanel-managed PostgreSQL database.
 - Route database traffic through the internal Docker service name using `DATABASE_URL`.
 - Prefer internal service DNS in production, such as `postgresql://postgres:<password>@voice-agent-db:5432/postgres`.
+- Percent-encode special characters in the password before placing it in `DATABASE_URL`; for example, `@` must be written as `%40`.
 - Do not use Supabase SDKs or Supabase service-role routing for application persistence.
 
 **Credential handling:**
