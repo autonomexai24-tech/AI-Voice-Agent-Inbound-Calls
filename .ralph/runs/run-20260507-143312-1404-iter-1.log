@@ -16416,3 +16416,1181 @@ index 00555308653856210dfe182a0aee756cb2e8d1aa..754a3f695f4ba3a875ace04a9731d31b
 
 exec
 "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.1.0_x64__8wekyb3d8bbwe\\pwsh.exe" -Command 'git add .ralph/progress.md; git add -f .ralph/activity.log; git commit -m "Record FR-001 progress"; git status --porcelain' in C:\AI Voice Agent for Inbound Calls\InboundAIVoice-main
+ succeeded in 710ms:
+[main d4a3fa2] Record FR-001 progress
+ 1 file changed, 47 insertions(+)
+ M .ralph/runs/run-20260507-143312-1404-iter-1.log
+warning: in the working copy of '.ralph/progress.md', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/.dockerignore b/.dockerignore
+new file mode 100644
+index 0000000000000000000000000000000000000000..570abf264a8d7d9fae3af5112f494f7d60fb448e
+--- /dev/null
++++ b/.dockerignore
+@@ -0,0 +1,16 @@
++.git
++.agents
++.ralph/runs
++.ralph/*.log
++__pycache__
++*.pyc
++.venv
++venv
++node_modules
++frontend/node_modules
++frontend/.next
++.env
++.env.*
++!.env.example
++npm-debug.log*
++Dockerfile
+diff --git a/.gitignore b/.gitignore
+index 0f84ba5e5005826bd52f60199bea7d5179cb61f1..9ac15f8b9e971d7f99367257ed4358fae292c07f
+--- a/.gitignore
++++ b/.gitignore
+@@ -8,6 +8,11 @@
+ __pycache__/
+ *.pyc
+ 
++# Node / Next.js local build artifacts
++node_modules/
++frontend/node_modules/
++frontend/.next/
++
+ # IDE settings
+ .vscode/
+ .idea/
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index 1d4c6ff13ce9fbe145524e5d5b5979cf036bb27d..79f893cae416c539e1cf99079f5cdda7df2e5682
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,3 +5,50 @@
+ - (add reusable patterns here)
+ 
+ ---
++
++## [2026-05-07 14:38:53 +05:30] - FR-001: Containerization: The platform must use a multi-stage Docker build with Python and Next.js dependency stages and a python:3.11-slim final runtime image.
++Thread: 
++Run: 20260507-143312-1404 (iteration 1)
++Run log: C:/AI Voice Agent for Inbound Calls/InboundAIVoice-main/.ralph/runs/run-20260507-143312-1404-iter-1.log
++Run summary: C:/AI Voice Agent for Inbound Calls/InboundAIVoice-main/.ralph/runs/run-20260507-143312-1404-iter-1.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: c2c9d77 Implement FR-001 container runtime
++- Post-commit status: progress update pending second commit
++- Verification:
++  - Command: `cd frontend && npm install` -> PASS
++  - Command: `cd frontend && npm run build` -> PASS
++  - Command: `cd frontend && npm audit --audit-level=moderate` -> PASS
++  - Command: `node server.js from frontend/.next/standalone with PORT=8000, then Invoke-WebRequest http://127.0.0.1:8000/` -> PASS
++  - Command: `PowerShell static Docker/Supervisor FR-001 checks` -> PASS
++  - Command: `python test_session_init.py` -> PASS
++  - Command: `python test_llm.py` -> PASS
++  - Command: `python test_llm_detailed.py` -> PASS
++  - Command: `python test_streaming_tts.py` -> FAIL (requires SARVAM_API_KEY in environment)
++  - Command: `docker build -t inbound-ai-voice:fr-001 .` -> FAIL (Docker Desktop Linux engine pipe unavailable)
++- Files changed:
++  - .dockerignore
++  - .gitignore
++  - AGENTS.md
++  - Dockerfile
++  - supervisord.conf
++  - frontend/package.json
++  - frontend/package-lock.json
++  - frontend/next.config.mjs
++  - frontend/app/layout.jsx
++  - frontend/app/page.jsx
++  - frontend/app/globals.css
++  - frontend/public/.gitkeep
++  - .ralph/activity.log
++  - .ralph/progress.md
++- What was implemented
++  - Added a minimal Next.js production dashboard app configured with `output: "standalone"`.
++  - Reworked the Dockerfile into distinct Next.js dependency/build, Python dependency, Node runtime, and `python:3.11-slim` final runtime stages.
++  - Configured Supervisor to run as the container command, start the Python LiveKit worker automatically, and serve the standalone dashboard on port 8000 via `node server.js`.
++  - Added Docker context exclusions for local secrets and build artifacts.
++- **Learnings for future iterations:**
++  - The repository did not contain a `frontend/` app before this story, but the Dockerfile expected one.
++  - Docker cannot be fully verified until the Docker Desktop Linux engine is running.
++  - Local Python is 3.10.11; the production container remains pinned to Python 3.11 slim.
++  - `test_streaming_tts.py` requires `SARVAM_API_KEY` and is not a safe local no-secret smoke test.
++---
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..10052b498975d862f0aa43a313c269fb193c7bc6
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1,8 @@
++# Agent Operations
++
++## Build and Verification
++
++- Build the dashboard locally: `cd frontend && npm install && npm run build`.
++- Build the production container: `docker build -t inbound-ai-voice:fr-001 .`.
++- Smoke test the container with production-like environment variables and confirm Supervisor starts `voice_agent` and `next_dashboard`.
++- The production dashboard is served by `node server.js` from `frontend/.next/standalone` on port `8000`; do not use `npm start` or `next dev` in the container.
+diff --git a/Dockerfile b/Dockerfile
+index 8b71ac48e0da1cc96fac3ac000d53c9529057bde..27b7a9620e64a5145324e6edebbe6b5233845414
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -11,6 +11,8 @@
+ COPY frontend/ ./
+ RUN npm run build && test -f .next/standalone/server.js
+ 
++FROM node:20-bookworm-slim AS node-runtime
++
+ FROM python:3.11-slim AS python-builder
+ 
+ WORKDIR /app
+@@ -32,7 +34,6 @@
+     ca-certificates \
+     curl \
+     ffmpeg \
+-    nodejs \
+     supervisor \
+     && rm -rf /var/lib/apt/lists/*
+ 
+@@ -44,43 +45,13 @@
+ ENV PYTHONUNBUFFERED=1
+ ENV PYTHONDONTWRITEBYTECODE=1
+ 
++COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+ COPY --from=python-builder /root/.local /root/.local
+ COPY . .
+ COPY --from=frontend-builder /app/frontend/.next/standalone ./frontend/.next/standalone
+ COPY --from=frontend-builder /app/frontend/.next/static ./frontend/.next/standalone/.next/static
+ COPY --from=frontend-builder /app/frontend/public ./frontend/.next/standalone/public
+-RUN printf '%s\n' \
+-    '[supervisord]' \
+-    'nodaemon=true' \
+-    'logfile=/dev/null' \
+-    'logfile_maxbytes=0' \
+-    '' \
+-    '[program:voice_agent]' \
+-    'command=python agent.py start' \
+-    'directory=/app' \
+-    'environment=PYTHONUNBUFFERED="1",PYTHONDONTWRITEBYTECODE="1"' \
+-    'autostart=true' \
+-    'autorestart=true' \
+-    'startretries=10' \
+-    'stopwaitsecs=30' \
+-    'stderr_logfile=/dev/stderr' \
+-    'stderr_logfile_maxbytes=0' \
+-    'stdout_logfile=/dev/stdout' \
+-    'stdout_logfile_maxbytes=0' \
+-    '' \
+-    '[program:next_dashboard]' \
+-    'command=node server.js' \
+-    'directory=/app/frontend/.next/standalone' \
+-    'environment=NODE_ENV="production",NEXT_TELEMETRY_DISABLED="1",HOSTNAME="0.0.0.0",PORT="8000"' \
+-    'autostart=true' \
+-    'autorestart=true' \
+-    'startretries=5' \
+-    'stopwaitsecs=15' \
+-    'stderr_logfile=/dev/stderr' \
+-    'stderr_logfile_maxbytes=0' \
+-    'stdout_logfile=/dev/stdout' \
+-    'stdout_logfile_maxbytes=0' \
+-    > /etc/supervisor/conf.d/supervisord.conf
++COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+ 
+ EXPOSE 8000
+ 
+diff --git a/frontend/app/globals.css b/frontend/app/globals.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac5258a4d0387be79e4b5acea839dcb860ad75a3
+--- /dev/null
++++ b/frontend/app/globals.css
+@@ -0,0 +1,83 @@
++:root {
++  color-scheme: light;
++  font-family:
++    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
++  background: #f6f7f9;
++  color: #16181d;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++html,
++body {
++  min-height: 100%;
++  margin: 0;
++}
++
++body {
++  background:
++    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 247, 249, 0.96)),
++    #f6f7f9;
++}
++
++.shell {
++  display: grid;
++  min-height: 100vh;
++  place-items: center;
++  padding: 32px 20px;
++}
++
++.panel {
++  width: min(100%, 760px);
++  border: 1px solid #dfe3ea;
++  border-radius: 8px;
++  background: #ffffff;
++  padding: 32px;
++  box-shadow: 0 20px 50px rgba(22, 24, 29, 0.08);
++}
++
++.eyebrow {
++  margin: 0 0 12px;
++  color: #4c6fff;
++  font-size: 0.78rem;
++  font-weight: 700;
++  letter-spacing: 0;
++  text-transform: uppercase;
++}
++
++h1 {
++  margin: 0;
++  font-size: clamp(2rem, 4vw, 3.5rem);
++  line-height: 1.05;
++  letter-spacing: 0;
++}
++
++.summary {
++  max-width: 620px;
++  margin: 18px 0 0;
++  color: #4c5564;
++  font-size: 1rem;
++  line-height: 1.65;
++}
++
++.checks {
++  display: grid;
++  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
++  gap: 12px;
++  margin: 28px 0 0;
++  padding: 0;
++  list-style: none;
++}
++
++.checks li {
++  min-height: 52px;
++  border: 1px solid #e5e8ef;
++  border-radius: 8px;
++  background: #fbfcfe;
++  padding: 14px 16px;
++  color: #252a33;
++  font-size: 0.95rem;
++  line-height: 1.35;
++}
+diff --git a/frontend/app/layout.jsx b/frontend/app/layout.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fc5e554ed6c88198bcd254afbbde0737cd5e2de
+--- /dev/null
++++ b/frontend/app/layout.jsx
+@@ -0,0 +1,14 @@
++import "./globals.css";
++
++export const metadata = {
++  title: "Inbound AI Voice Dashboard",
++  description: "Operator dashboard for the inbound AI voice platform"
++};
++
++export default function RootLayout({ children }) {
++  return (
++    <html lang="en">
++      <body>{children}</body>
++    </html>
++  );
++}
+diff --git a/frontend/app/page.jsx b/frontend/app/page.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..af5018f64967ab3631fe8650613f41fab51eb365
+--- /dev/null
++++ b/frontend/app/page.jsx
+@@ -0,0 +1,26 @@
++const checks = [
++  "Supervisor-managed dashboard process",
++  "Next.js standalone runtime",
++  "Public container port 8000",
++  "Python LiveKit worker sidecar"
++];
++
++export default function HomePage() {
++  return (
++    <main className="shell">
++      <section className="panel" aria-labelledby="page-title">
++        <p className="eyebrow">Inbound AI Voice Platform</p>
++        <h1 id="page-title">Dashboard runtime is ready</h1>
++        <p className="summary">
++          This container serves the production Next.js dashboard from standalone output while the
++          LiveKit voice worker runs under Supervisor.
++        </p>
++        <ul className="checks" aria-label="Container runtime checks">
++          {checks.map((check) => (
++            <li key={check}>{check}</li>
++          ))}
++        </ul>
++      </section>
++    </main>
++  );
++}
+diff --git a/frontend/next.config.mjs b/frontend/next.config.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..68dea631869497b80ff0556a5010f4e500128562
+--- /dev/null
++++ b/frontend/next.config.mjs
+@@ -0,0 +1,6 @@
++/** @type {import('next').NextConfig} */
++const nextConfig = {
++  output: "standalone"
++};
++
++export default nextConfig;
+diff --git a/frontend/package.json b/frontend/package.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..9b80d42d3c410238c3ee4d843dba33fa7db0665c
+--- /dev/null
++++ b/frontend/package.json
+@@ -0,0 +1,18 @@
++{
++  "name": "inbound-ai-voice-dashboard",
++  "version": "0.1.0",
++  "private": true,
++  "scripts": {
++    "build": "next build",
++    "dev": "next dev --hostname 0.0.0.0 --port 8000",
++    "start": "next start --hostname 0.0.0.0 --port 8000"
++  },
++  "dependencies": {
++    "next": "16.2.5",
++    "react": "19.2.6",
++    "react-dom": "19.2.6"
++  },
++  "overrides": {
++    "postcss": "8.5.14"
++  }
++}
+diff --git a/frontend/public/.gitkeep b/frontend/public/.gitkeep
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b137891791fe96927ad78e64b0aad7bded08bdc
+--- /dev/null
++++ b/frontend/public/.gitkeep
+@@ -0,0 +1 @@
++
+diff --git a/supervisord.conf b/supervisord.conf
+index 00555308653856210dfe182a0aee756cb2e8d1aa..754a3f695f4ba3a875ace04a9731d31b9986c350
+--- a/supervisord.conf
++++ b/supervisord.conf
+@@ -3,9 +3,10 @@
+ logfile=/dev/null
+ logfile_maxbytes=0
+ 
+-[program:agent]
++[program:voice_agent]
+ command=python agent.py start
+ directory=/app
++environment=PYTHONUNBUFFERED="1",PYTHONDONTWRITEBYTECODE="1"
+ autostart=true
+ autorestart=true
+ startretries=10
+@@ -15,9 +16,10 @@
+ stdout_logfile=/dev/stdout
+ stdout_logfile_maxbytes=0
+ 
+-[program:ui_server]
+-command=uvicorn ui_server:app --host 0.0.0.0 --port 8000 --workers 1
+-directory=/app
++[program:next_dashboard]
++command=node server.js
++directory=/app/frontend/.next/standalone
++environment=NODE_ENV="production",NEXT_TELEMETRY_DISABLED="1",HOSTNAME="0.0.0.0",PORT="8000"
+ autostart=true
+ autorestart=true
+ startretries=5
+
+apply patch
+patch: completed
+C:\AI Voice Agent for Inbound Calls\InboundAIVoice-main\.ralph\progress.md
+diff --git a/.dockerignore b/.dockerignore
+new file mode 100644
+index 0000000000000000000000000000000000000000..570abf264a8d7d9fae3af5112f494f7d60fb448e
+--- /dev/null
++++ b/.dockerignore
+@@ -0,0 +1,16 @@
++.git
++.agents
++.ralph/runs
++.ralph/*.log
++__pycache__
++*.pyc
++.venv
++venv
++node_modules
++frontend/node_modules
++frontend/.next
++.env
++.env.*
++!.env.example
++npm-debug.log*
++Dockerfile
+diff --git a/.gitignore b/.gitignore
+index 0f84ba5e5005826bd52f60199bea7d5179cb61f1..9ac15f8b9e971d7f99367257ed4358fae292c07f
+--- a/.gitignore
++++ b/.gitignore
+@@ -8,6 +8,11 @@
+ __pycache__/
+ *.pyc
+ 
++# Node / Next.js local build artifacts
++node_modules/
++frontend/node_modules/
++frontend/.next/
++
+ # IDE settings
+ .vscode/
+ .idea/
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index 1d4c6ff13ce9fbe145524e5d5b5979cf036bb27d..34149250efde664b3082184c59fe727c106c3a58
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,3 +5,50 @@
+ - (add reusable patterns here)
+ 
+ ---
++
++## [2026-05-07 14:38:53 +05:30] - FR-001: Containerization: The platform must use a multi-stage Docker build with Python and Next.js dependency stages and a python:3.11-slim final runtime image.
++Thread: 
++Run: 20260507-143312-1404 (iteration 1)
++Run log: C:/AI Voice Agent for Inbound Calls/InboundAIVoice-main/.ralph/runs/run-20260507-143312-1404-iter-1.log
++Run summary: C:/AI Voice Agent for Inbound Calls/InboundAIVoice-main/.ralph/runs/run-20260507-143312-1404-iter-1.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: c2c9d77 Implement FR-001 container runtime
++- Post-commit status: clean after progress/log commit
++- Verification:
++  - Command: `cd frontend && npm install` -> PASS
++  - Command: `cd frontend && npm run build` -> PASS
++  - Command: `cd frontend && npm audit --audit-level=moderate` -> PASS
++  - Command: `node server.js from frontend/.next/standalone with PORT=8000, then Invoke-WebRequest http://127.0.0.1:8000/` -> PASS
++  - Command: `PowerShell static Docker/Supervisor FR-001 checks` -> PASS
++  - Command: `python test_session_init.py` -> PASS
++  - Command: `python test_llm.py` -> PASS
++  - Command: `python test_llm_detailed.py` -> PASS
++  - Command: `python test_streaming_tts.py` -> FAIL (requires SARVAM_API_KEY in environment)
++  - Command: `docker build -t inbound-ai-voice:fr-001 .` -> FAIL (Docker Desktop Linux engine pipe unavailable)
++- Files changed:
++  - .dockerignore
++  - .gitignore
++  - AGENTS.md
++  - Dockerfile
++  - supervisord.conf
++  - frontend/package.json
++  - frontend/package-lock.json
++  - frontend/next.config.mjs
++  - frontend/app/layout.jsx
++  - frontend/app/page.jsx
++  - frontend/app/globals.css
++  - frontend/public/.gitkeep
++  - .ralph/activity.log
++  - .ralph/progress.md
++- What was implemented
++  - Added a minimal Next.js production dashboard app configured with `output: "standalone"`.
++  - Reworked the Dockerfile into distinct Next.js dependency/build, Python dependency, Node runtime, and `python:3.11-slim` final runtime stages.
++  - Configured Supervisor to run as the container command, start the Python LiveKit worker automatically, and serve the standalone dashboard on port 8000 via `node server.js`.
++  - Added Docker context exclusions for local secrets and build artifacts.
++- **Learnings for future iterations:**
++  - The repository did not contain a `frontend/` app before this story, but the Dockerfile expected one.
++  - Docker cannot be fully verified until the Docker Desktop Linux engine is running.
++  - Local Python is 3.10.11; the production container remains pinned to Python 3.11 slim.
++  - `test_streaming_tts.py` requires `SARVAM_API_KEY` and is not a safe local no-secret smoke test.
++---
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..10052b498975d862f0aa43a313c269fb193c7bc6
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1,8 @@
++# Agent Operations
++
++## Build and Verification
++
++- Build the dashboard locally: `cd frontend && npm install && npm run build`.
++- Build the production container: `docker build -t inbound-ai-voice:fr-001 .`.
++- Smoke test the container with production-like environment variables and confirm Supervisor starts `voice_agent` and `next_dashboard`.
++- The production dashboard is served by `node server.js` from `frontend/.next/standalone` on port `8000`; do not use `npm start` or `next dev` in the container.
+diff --git a/Dockerfile b/Dockerfile
+index 8b71ac48e0da1cc96fac3ac000d53c9529057bde..27b7a9620e64a5145324e6edebbe6b5233845414
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -11,6 +11,8 @@
+ COPY frontend/ ./
+ RUN npm run build && test -f .next/standalone/server.js
+ 
++FROM node:20-bookworm-slim AS node-runtime
++
+ FROM python:3.11-slim AS python-builder
+ 
+ WORKDIR /app
+@@ -32,7 +34,6 @@
+     ca-certificates \
+     curl \
+     ffmpeg \
+-    nodejs \
+     supervisor \
+     && rm -rf /var/lib/apt/lists/*
+ 
+@@ -44,43 +45,13 @@
+ ENV PYTHONUNBUFFERED=1
+ ENV PYTHONDONTWRITEBYTECODE=1
+ 
++COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+ COPY --from=python-builder /root/.local /root/.local
+ COPY . .
+ COPY --from=frontend-builder /app/frontend/.next/standalone ./frontend/.next/standalone
+ COPY --from=frontend-builder /app/frontend/.next/static ./frontend/.next/standalone/.next/static
+ COPY --from=frontend-builder /app/frontend/public ./frontend/.next/standalone/public
+-RUN printf '%s\n' \
+-    '[supervisord]' \
+-    'nodaemon=true' \
+-    'logfile=/dev/null' \
+-    'logfile_maxbytes=0' \
+-    '' \
+-    '[program:voice_agent]' \
+-    'command=python agent.py start' \
+-    'directory=/app' \
+-    'environment=PYTHONUNBUFFERED="1",PYTHONDONTWRITEBYTECODE="1"' \
+-    'autostart=true' \
+-    'autorestart=true' \
+-    'startretries=10' \
+-    'stopwaitsecs=30' \
+-    'stderr_logfile=/dev/stderr' \
+-    'stderr_logfile_maxbytes=0' \
+-    'stdout_logfile=/dev/stdout' \
+-    'stdout_logfile_maxbytes=0' \
+-    '' \
+-    '[program:next_dashboard]' \
+-    'command=node server.js' \
+-    'directory=/app/frontend/.next/standalone' \
+-    'environment=NODE_ENV="production",NEXT_TELEMETRY_DISABLED="1",HOSTNAME="0.0.0.0",PORT="8000"' \
+-    'autostart=true' \
+-    'autorestart=true' \
+-    'startretries=5' \
+-    'stopwaitsecs=15' \
+-    'stderr_logfile=/dev/stderr' \
+-    'stderr_logfile_maxbytes=0' \
+-    'stdout_logfile=/dev/stdout' \
+-    'stdout_logfile_maxbytes=0' \
+-    > /etc/supervisor/conf.d/supervisord.conf
++COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+ 
+ EXPOSE 8000
+ 
+diff --git a/frontend/app/globals.css b/frontend/app/globals.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac5258a4d0387be79e4b5acea839dcb860ad75a3
+--- /dev/null
++++ b/frontend/app/globals.css
+@@ -0,0 +1,83 @@
++:root {
++  color-scheme: light;
++  font-family:
++    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
++  background: #f6f7f9;
++  color: #16181d;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++html,
++body {
++  min-height: 100%;
++  margin: 0;
++}
++
++body {
++  background:
++    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 247, 249, 0.96)),
++    #f6f7f9;
++}
++
++.shell {
++  display: grid;
++  min-height: 100vh;
++  place-items: center;
++  padding: 32px 20px;
++}
++
++.panel {
++  width: min(100%, 760px);
++  border: 1px solid #dfe3ea;
++  border-radius: 8px;
++  background: #ffffff;
++  padding: 32px;
++  box-shadow: 0 20px 50px rgba(22, 24, 29, 0.08);
++}
++
++.eyebrow {
++  margin: 0 0 12px;
++  color: #4c6fff;
++  font-size: 0.78rem;
++  font-weight: 700;
++  letter-spacing: 0;
++  text-transform: uppercase;
++}
++
++h1 {
++  margin: 0;
++  font-size: clamp(2rem, 4vw, 3.5rem);
++  line-height: 1.05;
++  letter-spacing: 0;
++}
++
++.summary {
++  max-width: 620px;
++  margin: 18px 0 0;
++  color: #4c5564;
++  font-size: 1rem;
++  line-height: 1.65;
++}
++
++.checks {
++  display: grid;
++  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
++  gap: 12px;
++  margin: 28px 0 0;
++  padding: 0;
++  list-style: none;
++}
++
++.checks li {
++  min-height: 52px;
++  border: 1px solid #e5e8ef;
++  border-radius: 8px;
++  background: #fbfcfe;
++  padding: 14px 16px;
++  color: #252a33;
++  font-size: 0.95rem;
++  line-height: 1.35;
++}
+diff --git a/frontend/app/layout.jsx b/frontend/app/layout.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fc5e554ed6c88198bcd254afbbde0737cd5e2de
+--- /dev/null
++++ b/frontend/app/layout.jsx
+@@ -0,0 +1,14 @@
++import "./globals.css";
++
++export const metadata = {
++  title: "Inbound AI Voice Dashboard",
++  description: "Operator dashboard for the inbound AI voice platform"
++};
++
++export default function RootLayout({ children }) {
++  return (
++    <html lang="en">
++      <body>{children}</body>
++    </html>
++  );
++}
+diff --git a/frontend/app/page.jsx b/frontend/app/page.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..af5018f64967ab3631fe8650613f41fab51eb365
+--- /dev/null
++++ b/frontend/app/page.jsx
+@@ -0,0 +1,26 @@
++const checks = [
++  "Supervisor-managed dashboard process",
++  "Next.js standalone runtime",
++  "Public container port 8000",
++  "Python LiveKit worker sidecar"
++];
++
++export default function HomePage() {
++  return (
++    <main className="shell">
++      <section className="panel" aria-labelledby="page-title">
++        <p className="eyebrow">Inbound AI Voice Platform</p>
++        <h1 id="page-title">Dashboard runtime is ready</h1>
++        <p className="summary">
++          This container serves the production Next.js dashboard from standalone output while the
++          LiveKit voice worker runs under Supervisor.
++        </p>
++        <ul className="checks" aria-label="Container runtime checks">
++          {checks.map((check) => (
++            <li key={check}>{check}</li>
++          ))}
++        </ul>
++      </section>
++    </main>
++  );
++}
+diff --git a/frontend/next.config.mjs b/frontend/next.config.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..68dea631869497b80ff0556a5010f4e500128562
+--- /dev/null
++++ b/frontend/next.config.mjs
+@@ -0,0 +1,6 @@
++/** @type {import('next').NextConfig} */
++const nextConfig = {
++  output: "standalone"
++};
++
++export default nextConfig;
+diff --git a/frontend/package.json b/frontend/package.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..9b80d42d3c410238c3ee4d843dba33fa7db0665c
+--- /dev/null
++++ b/frontend/package.json
+@@ -0,0 +1,18 @@
++{
++  "name": "inbound-ai-voice-dashboard",
++  "version": "0.1.0",
++  "private": true,
++  "scripts": {
++    "build": "next build",
++    "dev": "next dev --hostname 0.0.0.0 --port 8000",
++    "start": "next start --hostname 0.0.0.0 --port 8000"
++  },
++  "dependencies": {
++    "next": "16.2.5",
++    "react": "19.2.6",
++    "react-dom": "19.2.6"
++  },
++  "overrides": {
++    "postcss": "8.5.14"
++  }
++}
+diff --git a/frontend/public/.gitkeep b/frontend/public/.gitkeep
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b137891791fe96927ad78e64b0aad7bded08bdc
+--- /dev/null
++++ b/frontend/public/.gitkeep
+@@ -0,0 +1 @@
++
+diff --git a/supervisord.conf b/supervisord.conf
+index 00555308653856210dfe182a0aee756cb2e8d1aa..754a3f695f4ba3a875ace04a9731d31b9986c350
+--- a/supervisord.conf
++++ b/supervisord.conf
+@@ -3,9 +3,10 @@
+ logfile=/dev/null
+ logfile_maxbytes=0
+ 
+-[program:agent]
++[program:voice_agent]
+ command=python agent.py start
+ directory=/app
++environment=PYTHONUNBUFFERED="1",PYTHONDONTWRITEBYTECODE="1"
+ autostart=true
+ autorestart=true
+ startretries=10
+@@ -15,9 +16,10 @@
+ stdout_logfile=/dev/stdout
+ stdout_logfile_maxbytes=0
+ 
+-[program:ui_server]
+-command=uvicorn ui_server:app --host 0.0.0.0 --port 8000 --workers 1
+-directory=/app
++[program:next_dashboard]
++command=node server.js
++directory=/app/frontend/.next/standalone
++environment=NODE_ENV="production",NEXT_TELEMETRY_DISABLED="1",HOSTNAME="0.0.0.0",PORT="8000"
+ autostart=true
+ autorestart=true
+ startretries=5
+
+diff --git a/.dockerignore b/.dockerignore
+new file mode 100644
+index 0000000000000000000000000000000000000000..570abf264a8d7d9fae3af5112f494f7d60fb448e
+--- /dev/null
++++ b/.dockerignore
+@@ -0,0 +1,16 @@
++.git
++.agents
++.ralph/runs
++.ralph/*.log
++__pycache__
++*.pyc
++.venv
++venv
++node_modules
++frontend/node_modules
++frontend/.next
++.env
++.env.*
++!.env.example
++npm-debug.log*
++Dockerfile
+diff --git a/.gitignore b/.gitignore
+index 0f84ba5e5005826bd52f60199bea7d5179cb61f1..9ac15f8b9e971d7f99367257ed4358fae292c07f
+--- a/.gitignore
++++ b/.gitignore
+@@ -8,6 +8,11 @@
+ __pycache__/
+ *.pyc
+ 
++# Node / Next.js local build artifacts
++node_modules/
++frontend/node_modules/
++frontend/.next/
++
+ # IDE settings
+ .vscode/
+ .idea/
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index 1d4c6ff13ce9fbe145524e5d5b5979cf036bb27d..34149250efde664b3082184c59fe727c106c3a58
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,3 +5,50 @@
+ - (add reusable patterns here)
+ 
+ ---
++
++## [2026-05-07 14:38:53 +05:30] - FR-001: Containerization: The platform must use a multi-stage Docker build with Python and Next.js dependency stages and a python:3.11-slim final runtime image.
++Thread: 
++Run: 20260507-143312-1404 (iteration 1)
++Run log: C:/AI Voice Agent for Inbound Calls/InboundAIVoice-main/.ralph/runs/run-20260507-143312-1404-iter-1.log
++Run summary: C:/AI Voice Agent for Inbound Calls/InboundAIVoice-main/.ralph/runs/run-20260507-143312-1404-iter-1.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: c2c9d77 Implement FR-001 container runtime
++- Post-commit status: clean after progress/log commit
++- Verification:
++  - Command: `cd frontend && npm install` -> PASS
++  - Command: `cd frontend && npm run build` -> PASS
++  - Command: `cd frontend && npm audit --audit-level=moderate` -> PASS
++  - Command: `node server.js from frontend/.next/standalone with PORT=8000, then Invoke-WebRequest http://127.0.0.1:8000/` -> PASS
++  - Command: `PowerShell static Docker/Supervisor FR-001 checks` -> PASS
++  - Command: `python test_session_init.py` -> PASS
++  - Command: `python test_llm.py` -> PASS
++  - Command: `python test_llm_detailed.py` -> PASS
++  - Command: `python test_streaming_tts.py` -> FAIL (requires SARVAM_API_KEY in environment)
++  - Command: `docker build -t inbound-ai-voice:fr-001 .` -> FAIL (Docker Desktop Linux engine pipe unavailable)
++- Files changed:
++  - .dockerignore
++  - .gitignore
++  - AGENTS.md
++  - Dockerfile
++  - supervisord.conf
++  - frontend/package.json
++  - frontend/package-lock.json
++  - frontend/next.config.mjs
++  - frontend/app/layout.jsx
++  - frontend/app/page.jsx
++  - frontend/app/globals.css
++  - frontend/public/.gitkeep
++  - .ralph/activity.log
++  - .ralph/progress.md
++- What was implemented
++  - Added a minimal Next.js production dashboard app configured with `output: "standalone"`.
++  - Reworked the Dockerfile into distinct Next.js dependency/build, Python dependency, Node runtime, and `python:3.11-slim` final runtime stages.
++  - Configured Supervisor to run as the container command, start the Python LiveKit worker automatically, and serve the standalone dashboard on port 8000 via `node server.js`.
++  - Added Docker context exclusions for local secrets and build artifacts.
++- **Learnings for future iterations:**
++  - The repository did not contain a `frontend/` app before this story, but the Dockerfile expected one.
++  - Docker cannot be fully verified until the Docker Desktop Linux engine is running.
++  - Local Python is 3.10.11; the production container remains pinned to Python 3.11 slim.
++  - `test_streaming_tts.py` requires `SARVAM_API_KEY` and is not a safe local no-secret smoke test.
++---
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..10052b498975d862f0aa43a313c269fb193c7bc6
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1,8 @@
++# Agent Operations
++
++## Build and Verification
++
++- Build the dashboard locally: `cd frontend && npm install && npm run build`.
++- Build the production container: `docker build -t inbound-ai-voice:fr-001 .`.
++- Smoke test the container with production-like environment variables and confirm Supervisor starts `voice_agent` and `next_dashboard`.
++- The production dashboard is served by `node server.js` from `frontend/.next/standalone` on port `8000`; do not use `npm start` or `next dev` in the container.
+diff --git a/Dockerfile b/Dockerfile
+index 8b71ac48e0da1cc96fac3ac000d53c9529057bde..27b7a9620e64a5145324e6edebbe6b5233845414
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -11,6 +11,8 @@
+ COPY frontend/ ./
+ RUN npm run build && test -f .next/standalone/server.js
+ 
++FROM node:20-bookworm-slim AS node-runtime
++
+ FROM python:3.11-slim AS python-builder
+ 
+ WORKDIR /app
+@@ -32,7 +34,6 @@
+     ca-certificates \
+     curl \
+     ffmpeg \
+-    nodejs \
+     supervisor \
+     && rm -rf /var/lib/apt/lists/*
+ 
+@@ -44,43 +45,13 @@
+ ENV PYTHONUNBUFFERED=1
+ ENV PYTHONDONTWRITEBYTECODE=1
+ 
++COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+ COPY --from=python-builder /root/.local /root/.local
+ COPY . .
+ COPY --from=frontend-builder /app/frontend/.next/standalone ./frontend/.next/standalone
+ COPY --from=frontend-builder /app/frontend/.next/static ./frontend/.next/standalone/.next/static
+ COPY --from=frontend-builder /app/frontend/public ./frontend/.next/standalone/public
+-RUN printf '%s\n' \
+-    '[supervisord]' \
+-    'nodaemon=true' \
+-    'logfile=/dev/null' \
+-    'logfile_maxbytes=0' \
+-    '' \
+-    '[program:voice_agent]' \
+-    'command=python agent.py start' \
+-    'directory=/app' \
+-    'environment=PYTHONUNBUFFERED="1",PYTHONDONTWRITEBYTECODE="1"' \
+-    'autostart=true' \
+-    'autorestart=true' \
+-    'startretries=10' \
+-    'stopwaitsecs=30' \
+-    'stderr_logfile=/dev/stderr' \
+-    'stderr_logfile_maxbytes=0' \
+-    'stdout_logfile=/dev/stdout' \
+-    'stdout_logfile_maxbytes=0' \
+-    '' \
+-    '[program:next_dashboard]' \
+-    'command=node server.js' \
+-    'directory=/app/frontend/.next/standalone' \
+-    'environment=NODE_ENV="production",NEXT_TELEMETRY_DISABLED="1",HOSTNAME="0.0.0.0",PORT="8000"' \
+-    'autostart=true' \
+-    'autorestart=true' \
+-    'startretries=5' \
+-    'stopwaitsecs=15' \
+-    'stderr_logfile=/dev/stderr' \
+-    'stderr_logfile_maxbytes=0' \
+-    'stdout_logfile=/dev/stdout' \
+-    'stdout_logfile_maxbytes=0' \
+-    > /etc/supervisor/conf.d/supervisord.conf
++COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+ 
+ EXPOSE 8000
+ 
+diff --git a/frontend/app/globals.css b/frontend/app/globals.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac5258a4d0387be79e4b5acea839dcb860ad75a3
+--- /dev/null
++++ b/frontend/app/globals.css
+@@ -0,0 +1,83 @@
++:root {
++  color-scheme: light;
++  font-family:
++    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
++  background: #f6f7f9;
++  color: #16181d;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++html,
++body {
++  min-height: 100%;
++  margin: 0;
++}
++
++body {
++  background:
++    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 247, 249, 0.96)),
++    #f6f7f9;
++}
++
++.shell {
++  display: grid;
++  min-height: 100vh;
++  place-items: center;
++  padding: 32px 20px;
++}
++
++.panel {
++  width: min(100%, 760px);
++  border: 1px solid #dfe3ea;
++  border-radius: 8px;
++  background: #ffffff;
++  padding: 32px;
++  box-shadow: 0 20px 50px rgba(22, 24, 29, 0.08);
++}
++
++.eyebrow {
++  margin: 0 0 12px;
++  color: #4c6fff;
++  font-size: 0.78rem;
++  font-weight: 700;
++  letter-spacing: 0;
++  text-transform: uppercase;
++}
++
++h1 {
++  margin: 0;
++  font-size: clamp(2rem, 4vw, 3.5rem);
++  line-height: 1.05;
++  letter-spacing: 0;
++}
++
++.summary {
++  max-width: 620px;
++  margin: 18px 0 0;
++  color: #4c5564;
++  font-size: 1rem;
++  line-height: 1.65;
++}
++
++.checks {
++  display: grid;
++  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
++  gap: 12px;
++  margin: 28px 0 0;
++  padding: 0;
++  list-style: none;
++}
++
++.checks li {
++  min-height: 52px;
++  border: 1px solid #e5e8ef;
++  border-radius: 8px;
++  background: #fbfcfe;
++  padding: 14px 16px;
++  color: #252a33;
++  font-size: 0.95rem;
++  line-height: 1.35;
++}
+diff --git a/frontend/app/layout.jsx b/frontend/app/layout.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fc5e554ed6c88198bcd254afbbde0737cd5e2de
+--- /dev/null
++++ b/frontend/app/layout.jsx
+@@ -0,0 +1,14 @@
++import "./globals.css";
++
++export const metadata = {
++  title: "Inbound AI Voice Dashboard",
++  description: "Operator dashboard for the inbound AI voice platform"
++};
++
++export default function RootLayout({ children }) {
++  return (
++    <html lang="en">
++      <body>{children}</body>
++    </html>
++  );
++}
+diff --git a/frontend/app/page.jsx b/frontend/app/page.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..af5018f64967ab3631fe8650613f41fab51eb365
+--- /dev/null
++++ b/frontend/app/page.jsx
+@@ -0,0 +1,26 @@
++const checks = [
++  "Supervisor-managed dashboard process",
++  "Next.js standalone runtime",
++  "Public container port 8000",
++  "Python LiveKit worker sidecar"
++];
++
++export default function HomePage() {
++  return (
++    <main className="shell">
++      <section className="panel" aria-labelledby="page-title">
++        <p className="eyebrow">Inbound AI Voice Platform</p>
++        <h1 id="page-title">Dashboard runtime is ready</h1>
++        <p className="summary">
++          This container serves the production Next.js dashboard from standalone output while the
++          LiveKit voice worker runs under Supervisor.
++        </p>
++        <ul className="checks" aria-label="Container runtime checks">
++          {checks.map((check) => (
++            <li key={check}>{check}</li>
++          ))}
++        </ul>
++      </section>
++    </main>
++  );
++}
+diff --git a/frontend/next.config.mjs b/frontend/next.config.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..68dea631869497b80ff0556a5010f4e500128562
+--- /dev/null
++++ b/frontend/next.config.mjs
+@@ -0,0 +1,6 @@
++/** @type {import('next').NextConfig} */
++const nextConfig = {
++  output: "standalone"
++};
++
++export default nextConfig;
+diff --git a/frontend/package.json b/frontend/package.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..9b80d42d3c410238c3ee4d843dba33fa7db0665c
+--- /dev/null
++++ b/frontend/package.json
+@@ -0,0 +1,18 @@
++{
++  "name": "inbound-ai-voice-dashboard",
++  "version": "0.1.0",
++  "private": true,
++  "scripts": {
++    "build": "next build",
++    "dev": "next dev --hostname 0.0.0.0 --port 8000",
++    "start": "next start --hostname 0.0.0.0 --port 8000"
++  },
++  "dependencies": {
++    "next": "16.2.5",
++    "react": "19.2.6",
++    "react-dom": "19.2.6"
++  },
++  "overrides": {
++    "postcss": "8.5.14"
++  }
++}
+diff --git a/frontend/public/.gitkeep b/frontend/public/.gitkeep
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b137891791fe96927ad78e64b0aad7bded08bdc
+--- /dev/null
++++ b/frontend/public/.gitkeep
+@@ -0,0 +1 @@
++
+diff --git a/supervisord.conf b/supervisord.conf
+index 00555308653856210dfe182a0aee756cb2e8d1aa..754a3f695f4ba3a875ace04a9731d31b9986c350
+--- a/supervisord.conf
++++ b/supervisord.conf
+@@ -3,9 +3,10 @@
+ logfile=/dev/null
+ logfile_maxbytes=0
+ 
+-[program:agent]
++[program:voice_agent]
+ command=python agent.py start
+ directory=/app
++environment=PYTHONUNBUFFERED="1",PYTHONDONTWRITEBYTECODE="1"
+ autostart=true
+ autorestart=true
+ startretries=10
+@@ -15,9 +16,10 @@
+ stdout_logfile=/dev/stdout
+ stdout_logfile_maxbytes=0
+ 
+-[program:ui_server]
+-command=uvicorn ui_server:app --host 0.0.0.0 --port 8000 --workers 1
+-directory=/app
++[program:next_dashboard]
++command=node server.js
++directory=/app/frontend/.next/standalone
++environment=NODE_ENV="production",NEXT_TELEMETRY_DISABLED="1",HOSTNAME="0.0.0.0",PORT="8000"
+ autostart=true
+ autorestart=true
+ startretries=5
+
+exec
+"C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.1.0_x64__8wekyb3d8bbwe\\pwsh.exe" -Command 'git add .ralph/progress.md; git add -f .ralph/runs/run-20260507-143312-1404-iter-1.log .ralph/activity.log; git commit -m "Finalize FR-001 run log"; git status --porcelain' in C:\AI Voice Agent for Inbound Calls\InboundAIVoice-main
