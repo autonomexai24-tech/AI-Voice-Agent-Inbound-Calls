@@ -49,7 +49,7 @@ The platform handles phone calls, personal names, phone numbers, and appointment
 
 - **Python backend:** All secrets read from `os.environ` at runtime. Never hardcoded.
 - **Next.js dashboard:** `postgres-server.ts` uses `import "server-only"` guard. `DATABASE_URL` is read only in server components/actions. Middleware reads `DASHBOARD_PASSWORD` server-side only.
-- **`.env` file:** Exists in repo with placeholder values for development reference. `.gitignore` should exclude `.env` with real values, but the committed `.env` should contain only empty placeholders or examples.
+- **`.env` file:** Local developer state only. `.gitignore` excludes `.env`; production values must be set in Easypanel environment variables.
 
 ---
 
@@ -260,9 +260,11 @@ When recording links are stored:
 | All routes except `/login` require authentication | ✅ Middleware enforced |
 | Session token is HMAC-SHA256 of `DASHBOARD_PASSWORD` | ✅ |
 | Constant-time comparison prevents timing attacks | ✅ |
+| Login password check uses constant-time hash comparison | ✅ |
 | Session stored in `inbound_dashboard_session` cookie | ✅ |
 | 12-hour session expiration via `maxAge` | ✅ Cookie expires after 12 hours |
 | Webhook routes (`/api/webhook*`) are public | ✅ Required for external integrations |
+| Security headers are emitted by Next.js | ✅ CSP, HSTS, frame, MIME, referrer, permissions policy |
 
 ### Missing (future)
 
@@ -289,7 +291,8 @@ The session token is deterministic — it's always the HMAC of a fixed message u
 ### Current mechanism
 
 ```
-Login form → server action → verifyDashboardSessionToken()
+Login form → server action
+    → verify submitted password with constant-time SHA-256 hash comparison
     → HMAC-SHA256(DASHBOARD_PASSWORD, "inbound-dashboard-session-v1")
     → Set cookie: inbound_dashboard_session = hex(signature)
 
@@ -301,8 +304,21 @@ Every request → middleware → verifyDashboardSessionToken()
 
 - **No database session table** — stateless verification using HMAC.
 - **No JWT** — simpler, no expiration logic, no refresh tokens.
-- **Constant-time comparison** — prevents timing-based password guessing.
+- **Constant-time comparison** — prevents timing-based password/session guessing.
 - **Server-side only** — password never sent to the client.
+
+### Security headers
+
+`next.config.mjs` applies these headers to dashboard responses:
+
+| Header | Purpose |
+|--------|---------|
+| `Content-Security-Policy` | Restricts scripts, forms, framing, images, fonts, and connections to the app origin |
+| `Strict-Transport-Security` | Requires HTTPS on supported browsers after first secure visit |
+| `X-Frame-Options: DENY` | Prevents clickjacking by blocking framing |
+| `X-Content-Type-Options: nosniff` | Prevents MIME type sniffing |
+| `Referrer-Policy` | Limits referrer leakage to other origins |
+| `Permissions-Policy` | Disables camera, microphone, and geolocation in the dashboard |
 
 ### Limitations
 

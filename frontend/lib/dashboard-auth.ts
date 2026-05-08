@@ -26,6 +26,24 @@ function constantTimeEqual(left: string, right: string) {
   return diff === 0;
 }
 
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", encodeText(value));
+  return toHex(digest);
+}
+
+export async function verifyDashboardPassword(submittedPassword: string | undefined, configuredPassword: string | undefined) {
+  if (!submittedPassword || !configuredPassword) {
+    return false;
+  }
+
+  const [submittedHash, configuredHash] = await Promise.all([
+    sha256Hex(submittedPassword),
+    sha256Hex(configuredPassword)
+  ]);
+
+  return constantTimeEqual(submittedHash, configuredHash);
+}
+
 export async function createDashboardSessionToken(password: string | undefined) {
   if (!password) {
     return null;

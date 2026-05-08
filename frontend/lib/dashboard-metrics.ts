@@ -30,6 +30,12 @@ type RecentBookingRow = {
   caller_name: string | null;
 };
 
+type TrendRow = {
+  bucket: string | Date | null;
+  total_calls: string | number | null;
+  confirmed_bookings: string | number | null;
+};
+
 export type LanguageUsageMetric = {
   label: string;
   calls: number;
@@ -49,6 +55,13 @@ export type RecentBookingMetric = {
   callerName: string;
 };
 
+export type TrendMetric = {
+  label: string;
+  totalCalls: number;
+  confirmedBookings: number;
+  bookingRate: number;
+};
+
 export type DashboardMetrics = {
   totalCalls: number;
   bookingRate: number;
@@ -58,6 +71,7 @@ export type DashboardMetrics = {
   repeatCallers: number;
   languageUsage: LanguageUsageMetric[];
   peakCallHours: PeakHourMetric[];
+  trends: TrendMetric[];
   recentBookings: RecentBookingMetric[];
   dateRange: DateRangeKey;
   configured: boolean;
@@ -80,6 +94,7 @@ const emptyMetrics: DashboardMetrics = {
   repeatCallers: 0,
   languageUsage: [],
   peakCallHours: [],
+  trends: [],
   recentBookings: [],
   dateRange: "30d",
   configured: false
@@ -120,12 +135,52 @@ function languageLabel(bucket: string | null) {
   return "English";
 }
 
+function trendBucketExpression(dateRange: DateRangeKey) {
+  if (dateRange === "today") {
+    return "date_trunc('hour', c.start_time at time zone 'Asia/Kolkata')";
+  }
+  return "date_trunc('day', c.start_time at time zone 'Asia/Kolkata')";
+}
+
+function trendLimit(dateRange: DateRangeKey) {
+  if (dateRange === "today") {
+    return 24;
+  }
+  if (dateRange === "7d") {
+    return 7;
+  }
+  if (dateRange === "30d") {
+    return 30;
+  }
+  return 30;
+}
+
+function formatTrendLabel(value: string | Date | null, dateRange: DateRangeKey) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  if (dateRange === "today") {
+    return new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: true }).format(date);
+  }
+
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(date);
+}
+
 export async function getDashboardMetrics(range?: string | null): Promise<DashboardMetrics> {
   const dateRange = normalizeDateRange(range);
   const callDateFilter = dateRangeCondition("start_time", dateRange);
+  const trendDateFilter = dateRangeCondition("c.start_time", dateRange);
+  const trendBucket = trendBucketExpression(dateRange);
+  const trendRows = trendLimit(dateRange);
 
   try {
-    const [metricsResult, languageResult, peakHourResult, recentBookingsResult] = await Promise.all([
+    const [metricsResult, languageResult, peakHourResult, trendResult, recentBookingsResult] = await Promise.all([
       queryPostgres<MetricRow>(
         `
         with filtered_calls as (
@@ -177,6 +232,24 @@ export async function getDashboardMetrics(range?: string | null): Promise<Dashbo
         limit 3
         `
       ),
+      queryPostgres<TrendRow>(
+        `
+        select *
+        from (
+          select
+            ${trendBucket} as bucket,
+            count(*) as total_calls,
+            count(*) filter (where b.status = 'confirmed') as confirmed_bookings
+          from call_logs c
+          left join bookings b on b.call_id = c.id
+          where ${trendDateFilter}
+          group by bucket
+          order by bucket desc
+          limit ${trendRows}
+        ) series
+        order by bucket asc
+        `
+      ),
       queryPostgres<RecentBookingRow>(
         `
         select
@@ -215,6 +288,17 @@ export async function getDashboardMetrics(range?: string | null): Promise<Dashbo
         hour: toNumber(row.call_hour),
         calls: toNumber(row.calls)
       })),
+      trends: trendResult.rows.map((row) => {
+        const total = toNumber(row.total_calls);
+        const confirmed = toNumber(row.confirmed_bookings);
+
+        return {
+          label: formatTrendLabel(row.bucket, dateRange),
+          totalCalls: total,
+          confirmedBookings: confirmed,
+          bookingRate: total > 0 ? Math.round((confirmed / total) * 1000) / 10 : 0
+        };
+      }),
       recentBookings: recentBookingsResult.rows.map((row) => ({
         callId: row.call_id,
         appointmentTime: row.appointment_time,

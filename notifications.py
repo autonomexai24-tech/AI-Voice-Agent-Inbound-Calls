@@ -42,6 +42,9 @@ def _truncate_provider_response(value: Any, limit: int = 2000) -> str:
 async def send_booking_sms_with_result(
     phone_number: str,
     appointment_details: dict[str, Any] | str,
+    *,
+    business_name: str = "Dental Clinic",
+    callback_number: str = "",
 ) -> SmsSendResult:
     api_key = os.environ.get("FAST2SMS_API_KEY", "").strip()
     if not api_key:
@@ -49,7 +52,12 @@ async def send_booking_sms_with_result(
         return SmsSendResult(sent=False, error_message="FAST2SMS_API_KEY is not configured")
 
     details = _format_appointment_details(appointment_details)
-    message = f"Your appointment is confirmed for {details}. Thank you."
+    clean_business_name = business_name.strip() or "Dental Clinic"
+    clean_callback_number = callback_number.strip()
+    message = f"Your appointment with {clean_business_name} is confirmed for {details}."
+    if clean_callback_number:
+        message += f" For help or changes, call {clean_callback_number}."
+    message += " Thank you."
     payload = {
         "route": "q",
         "message": message,
@@ -108,6 +116,17 @@ async def send_booking_sms_with_result(
     return SmsSendResult(sent=True, provider_response=provider_response)
 
 
-async def send_booking_sms(phone_number: str, appointment_details: dict[str, Any] | str) -> bool:
-    result = await send_booking_sms_with_result(phone_number, appointment_details)
+async def send_booking_sms(
+    phone_number: str,
+    appointment_details: dict[str, Any] | str,
+    *,
+    business_name: str = "Dental Clinic",
+    callback_number: str = "",
+) -> bool:
+    result = await send_booking_sms_with_result(
+        phone_number,
+        appointment_details,
+        business_name=business_name,
+        callback_number=callback_number,
+    )
     return result.sent

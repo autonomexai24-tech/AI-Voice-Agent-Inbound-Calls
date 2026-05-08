@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { dateRangeOptions, getDashboardMetrics } from "../../lib/dashboard-metrics";
+import { dateRangeOptions, getDashboardMetrics, type TrendMetric } from "../../lib/dashboard-metrics";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +63,46 @@ function MetricCard({
       <p className="mt-4 text-3xl font-semibold tracking-normal">{value}</p>
       <p className={tone === "dark" ? "mt-3 text-sm text-neutral-300" : "mt-3 text-sm text-neutral-500"}>{note}</p>
     </article>
+  );
+}
+
+function TrendChart({ trends }: { trends: TrendMetric[] }) {
+  const maxCalls = Math.max(1, ...trends.map((item) => item.totalCalls));
+
+  if (trends.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-neutral-300 px-4 py-8 text-center text-sm text-neutral-500">
+        No call volume data for this range.
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid gap-4">
+      {trends.map((item) => {
+        const callWidth = Math.max(4, (item.totalCalls / maxCalls) * 100);
+        const bookingWidth = item.totalCalls > 0 ? Math.max(4, (item.confirmedBookings / maxCalls) * 100) : 0;
+
+        return (
+          <div key={item.label} className="grid gap-2">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="font-semibold text-neutral-800">{item.label}</span>
+              <span className="text-right text-neutral-500">
+                {item.totalCalls.toLocaleString("en-US")} calls / {item.bookingRate.toFixed(1)}%
+              </span>
+            </div>
+            <div className="relative h-5 overflow-hidden rounded-md bg-neutral-100">
+              <div className="absolute inset-y-0 left-0 rounded-md bg-neutral-950" style={{ width: `${callWidth}%` }} />
+              <div
+                className="absolute inset-y-1 left-1 rounded bg-emerald-400"
+                style={{ width: `${bookingWidth}%` }}
+                title={`${item.confirmedBookings.toLocaleString("en-US")} confirmed bookings`}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -161,6 +201,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <MetricCard label="Avg duration" value={formatDuration(metrics.avgDurationSeconds)} note="Completed calls" />
           <MetricCard label="Repeat callers" value={metrics.repeatCallers.toLocaleString("en-US")} note="2+ calls" />
         </div>
+
+        <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-neutral-500">Call volume and booking success</p>
+              <h2 className="mt-1 text-xl font-semibold text-neutral-950">Confirmed bookings over time</h2>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              <span className="rounded-full bg-neutral-950 px-3 py-1 text-white">Calls</span>
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-900">Confirmed bookings</span>
+            </div>
+          </div>
+          <div className="mt-6">
+            <TrendChart trends={metrics.trends} />
+          </div>
+        </section>
 
         <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_1fr]">
           <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">

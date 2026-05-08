@@ -65,7 +65,15 @@ function buildPageHref(params: Awaited<CrmPageProps["searchParams"]>, page: numb
 
 export default async function CrmPage({ searchParams }: CrmPageProps) {
   const params = await searchParams;
-  const result = await getCrmCalls(params);
+  const result = await getCrmCalls({
+    query: params?.q,
+    from: params?.from,
+    to: params?.to,
+    booking: params?.booking,
+    language: params?.language,
+    repeat: params?.repeat,
+    page: params?.page
+  });
   const firstRow = result.totalRows === 0 ? 0 : (result.page - 1) * result.pageSize + 1;
   const lastRow = Math.min(result.totalRows, result.page * result.pageSize);
 

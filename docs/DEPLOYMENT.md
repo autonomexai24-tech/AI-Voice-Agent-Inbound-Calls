@@ -424,7 +424,7 @@ At GPT-4o pricing (~$2.50/1M input, ~$10/1M output):
 
 ### Never committed to source
 
-All values live in Easypanel environment configuration. The `.env` file in the repo contains **placeholder/empty values** for development reference only.
+All production values live in Easypanel environment configuration. Local `.env` files are ignored developer state and must not be committed.
 
 ---
 
@@ -446,6 +446,7 @@ For the full production launch checklist, rollback SOP, backup SOP, and troubles
 3. Container starts → `init_db.py` runs → Supervisor starts processes.
 4. Verify dashboard loads at `https://domain.com/login`.
 5. Verify voice agent connects to LiveKit (check Easypanel logs for agent startup).
+6. Verify dashboard responses include security headers (`Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options`).
 
 ### Post-deployment verification
 

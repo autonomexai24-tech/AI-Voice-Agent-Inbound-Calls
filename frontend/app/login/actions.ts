@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { DASHBOARD_AUTH_COOKIE, createDashboardSessionToken } from "../../lib/dashboard-auth";
+import { DASHBOARD_AUTH_COOKIE, createDashboardSessionToken, verifyDashboardPassword } from "../../lib/dashboard-auth";
 
 export type LoginActionState = {
   status: "idle" | "error";
@@ -30,7 +30,7 @@ export async function loginAction(_previousState: LoginActionState, formData: Fo
     };
   }
 
-  if (submittedPassword !== configuredPassword) {
+  if (!(await verifyDashboardPassword(submittedPassword, configuredPassword))) {
     return {
       status: "error",
       message: "Incorrect password."

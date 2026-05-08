@@ -48,8 +48,10 @@ export type CrmFilters = {
 };
 
 export type CalendarFilters = {
+  query?: string | null;
   from?: string | null;
   to?: string | null;
+  status?: string | null;
   page?: string | number | null;
 };
 
@@ -175,6 +177,10 @@ function normalizeBookingFilter(value: string | null | undefined) {
 
 function normalizeLanguageFilter(value: string | null | undefined) {
   return ["en-IN", "hi-IN", "kn-IN", "mixed"].includes(value ?? "") ? value : null;
+}
+
+function normalizeCalendarStatusFilter(value: string | null | undefined) {
+  return ["confirmed", "pending", "cancelled", "failed"].includes(value ?? "") ? value : null;
 }
 
 function buildCallRow(
@@ -448,22 +454,36 @@ export async function getCrmCallDetail(callId: string): Promise<DetailResult<Crm
   }
 }
 
-export async function getConfirmedBookings(
+export async function getCalendarBookings(
   filters: CalendarFilters = {}
 ): Promise<OperationsResult<CalendarBookingRow>> {
   const page = normalizePage(filters.page);
   const offset = (page - 1) * PAGE_SIZE;
-  const conditions = ["b.status = $1"];
-  const values: unknown[] = ["confirmed"];
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  const search = String(filters.query ?? "").trim();
 
   addDateFilters(conditions, values, "b.appointment_time", filters.from, filters.to);
-  const whereClause = `where ${conditions.join(" and ")}`;
+
+  if (search) {
+    values.push(`%${search}%`);
+    conditions.push(`(c.phone_number ilike $${values.length} or c.caller_name ilike $${values.length})`);
+  }
+
+  const statusFilter = normalizeCalendarStatusFilter(filters.status);
+  if (statusFilter) {
+    values.push(statusFilter);
+    conditions.push(`b.status = $${values.length}`);
+  }
+
+  const whereClause = conditions.length > 0 ? `where ${conditions.join(" and ")}` : "";
 
   try {
     const countResult = await queryPostgres<CountRow>(
       `
       select count(*) as count
       from bookings b
+      left join call_logs c on c.id = b.call_id
       ${whereClause}
       `,
       values
@@ -508,6 +528,6 @@ export async function getConfirmedBookings(
       hasPreviousPage: page > 1
     };
   } catch (error) {
-    return emptyResult(error instanceof Error ? error.message : "Unable to load confirmed bookings.", page);
+    return emptyResult(error instanceof Error ? error.message : "Unable to load bookings.", page);
   }
 }

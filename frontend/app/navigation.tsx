@@ -7,7 +7,7 @@ const navItems = [
   { label: "CRM", href: "/crm" },
   { label: "Calendar", href: "/calendar" },
   { label: "Agent Config", href: "/agent-config" },
-  { label: "Business Settings", href: "/business-settings" }
+  { label: "Business", href: "/business-settings" }
 ];
 
 export function Navigation() {

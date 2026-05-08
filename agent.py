@@ -529,6 +529,38 @@ async def _fetch_confirmed_booking(call_id: str) -> dict[str, Any] | None:
     return await asyncio.to_thread(_fetch)
 
 
+async def _claim_unsent_confirmed_booking_for_sms(call_id: str) -> dict[str, Any] | None:
+    def _claim() -> dict[str, Any] | None:
+        return db.execute_returning_one(
+            """
+            update bookings
+            set sms_sent = true
+            where call_id = %s
+              and status = %s
+              and sms_sent = false
+            returning call_id, appointment_time, status, sms_sent
+            """,
+            (call_id, "confirmed"),
+        )
+
+    return await asyncio.to_thread(_claim)
+
+
+async def _release_booking_sms_claim(call_id: str) -> None:
+    def _release() -> None:
+        db.execute(
+            """
+            update bookings
+            set sms_sent = false
+            where call_id = %s
+              and status = %s
+            """,
+            (call_id, "confirmed"),
+        )
+
+    await asyncio.to_thread(_release)
+
+
 async def complete_call_log(
     call_id: str | None,
     started_at: datetime,
@@ -591,7 +623,13 @@ async def drain_transcript_tasks(timeout: float = 2.0) -> None:
             task.cancel()
 
 
-async def send_post_call_booking_sms(call_id: str | None, caller_phone: str | None) -> None:
+async def send_post_call_booking_sms(
+    call_id: str | None,
+    caller_phone: str | None,
+    *,
+    business_name: str = "Dental Clinic",
+    business_phone: str = "",
+) -> None:
     if not call_id:
         logger.info("[SMS] No call_id available; skipping post-call SMS check")
         return
@@ -600,29 +638,32 @@ async def send_post_call_booking_sms(call_id: str | None, caller_phone: str | No
         return
 
     try:
-        booking = await _fetch_confirmed_booking(call_id)
+        booking = await _claim_unsent_confirmed_booking_for_sms(call_id)
     except Exception as exc:
         logger.error("[SMS] Failed to check confirmed booking for call_id=%s: %s", call_id, exc)
         return
 
-    if not booking or booking.get("sms_sent"):
+    if not booking:
         logger.info("[SMS] No unsent confirmed booking for call_id=%s; SMS skipped", call_id)
         return
 
-    result = await send_booking_sms_with_result(caller_phone, booking)
+    result = await send_booking_sms_with_result(
+        caller_phone,
+        booking,
+        business_name=business_name,
+        callback_number=business_phone,
+    )
     await record_notification_event(call_id, result)
     if not result.sent:
         logger.error("[SMS] Fast2SMS send failed for call_id=%s", call_id)
+        try:
+            await _release_booking_sms_claim(call_id)
+            logger.info("[SMS] Released booking SMS claim for retry call_id=%s", call_id)
+        except Exception as exc:
+            logger.error("[SMS] Failed to release booking SMS claim for call_id=%s: %s", call_id, exc)
         return
 
-    def _mark_sent() -> None:
-        db.execute("update bookings set sms_sent = true where call_id = %s", (call_id,))
-
-    try:
-        await asyncio.to_thread(_mark_sent)
-        logger.info("[SMS] Marked booking SMS sent for call_id=%s", call_id)
-    except Exception as exc:
-        logger.error("[SMS] Failed to mark sms_sent=true for call_id=%s: %s", call_id, exc)
+    logger.info("[SMS] Marked booking SMS sent for call_id=%s", call_id)
 
 
 async def record_notification_event(call_id: str, result: SmsSendResult) -> None:
@@ -665,12 +706,24 @@ async def record_notification_event(call_id: str, result: SmsSendResult) -> None
         logger.error("[SMS] Failed to record notification event for call_id=%s: %s", call_id, exc)
 
 
-async def finalize_call(call_id: str | None, started_at: datetime, caller_phone: str | None) -> None:
+async def finalize_call(
+    call_id: str | None,
+    started_at: datetime,
+    caller_phone: str | None,
+    *,
+    business_name: str = "Dental Clinic",
+    business_phone: str = "",
+) -> None:
     log_event(logging.INFO, "call_shutdown_finalize_started", call_id=call_id)
     try:
         await drain_transcript_tasks()
         await complete_call_log(call_id, started_at)
-        await send_post_call_booking_sms(call_id, caller_phone)
+        await send_post_call_booking_sms(
+            call_id,
+            caller_phone,
+            business_name=business_name,
+            business_phone=business_phone,
+        )
     finally:
         log_event(logging.INFO, "call_shutdown_finalize_finished", call_id=call_id)
 
@@ -794,7 +847,15 @@ async def entrypoint(ctx: JobContext) -> None:
         )
         return
 
-    ctx.add_shutdown_callback(lambda: finalize_call(call_id, call_started_at, caller_phone))
+    ctx.add_shutdown_callback(
+        lambda: finalize_call(
+            call_id,
+            call_started_at,
+            caller_phone,
+            business_name=config.business_name,
+            business_phone=config.business_phone,
+        )
+    )
     logger.info("[LIVEKIT] Worker entrypoint finished initialization for room=%s", ctx.room.name)
 
 

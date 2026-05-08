@@ -16,7 +16,7 @@
   ```json
   {
       "route": "q",
-      "message": "Your appointment is confirmed for {details}. Thank you.",
+      "message": "Your appointment with {business_name} is confirmed for {details}. For help or changes, call {callback_number}. Thank you.",
       "language": "english",
       "flash": "0",
       "numbers": "9876543210"
@@ -34,16 +34,18 @@ SMS is triggered exclusively in the post-call shutdown callback. The sequence:
 
 1. Call ends → `finalize_call()` fires.
 2. `send_post_call_booking_sms(call_id, caller_phone)` runs.
-3. Query: does a confirmed booking exist for this call?
+3. Atomically claim one unsent confirmed booking for this call:
    ```sql
-   SELECT call_id, appointment_time, status, sms_sent
-   FROM bookings
-   WHERE call_id = %s AND status = 'confirmed'
-   LIMIT 1
+   UPDATE bookings
+   SET sms_sent = true
+   WHERE call_id = %s
+     AND status = 'confirmed'
+     AND sms_sent = false
+   RETURNING call_id, appointment_time, status, sms_sent
    ```
-4. If no confirmed booking → SMS skipped.
-5. If `sms_sent` is already `true` → SMS skipped (duplicate prevention).
-6. If confirmed + not yet sent → proceed to send.
+4. If no row is returned → SMS skipped.
+5. If a row is returned → proceed to send.
+6. If send fails → record failure and release `sms_sent` back to `false` for manual or future retry.
 
 **SMS is never sent for:**
 - Missed calls
@@ -79,60 +81,68 @@ WHERE call_id = %s AND status = 'confirmed'
 
 Only confirmed bookings trigger SMS. If the booking was never created or is in a different status, SMS is skipped.
 
-### Layer 2: sms_sent flag check
+### Layer 2: atomic sms_sent claim
 
 ```python
-if not booking or booking.get("sms_sent"):
-    # SMS skipped
-    return
+UPDATE bookings
+SET sms_sent = true
+WHERE call_id = %s
+  AND status = 'confirmed'
+  AND sms_sent = false
+RETURNING call_id, appointment_time, status, sms_sent
 ```
 
-If `sms_sent` is `true`, SMS is skipped even if the booking is confirmed.
+Only one caller can claim an unsent confirmed booking. If a repeated shutdown callback runs, the second claim returns no row and SMS is skipped.
 
 ### After successful send
 
+The booking is already marked `sms_sent=true` by the atomic claim. A successful Fast2SMS response leaves that flag set.
+
+### After failed send
+
+The failed attempt is recorded in `notification_events`, then the booking claim is released:
+
 ```sql
-UPDATE bookings SET sms_sent = true WHERE call_id = %s
+UPDATE bookings
+SET sms_sent = false
+WHERE call_id = %s AND status = 'confirmed'
 ```
 
-This marks the booking as SMS-delivered.
-
-### Edge case: mark-sent failure
-
-If the SMS is sent successfully but the `UPDATE bookings SET sms_sent = true` fails (DB error), the `sms_sent` flag remains `false`. There is no retry mechanism in the current code, so a duplicate SMS would only occur if the same call's shutdown callback were somehow re-executed (which doesn't happen in normal operation).
+There is no automatic retry loop. Releasing the claim keeps the booking eligible for a deliberate future retry.
 
 ---
 
 ## 5. Provider Response Logging
 
 ```python
-logger.info("[FAST2SMS] Response payload: %s", response_payload)
+logger.info("[FAST2SMS] Request finished ... provider_response=%s", provider_response)
 ```
 
-The full response payload from Fast2SMS is logged to stdout after every send attempt, whether successful or not. This includes:
+The provider response from Fast2SMS is logged to stdout after every send attempt, whether successful or not. This includes:
 - The JSON response body (if parseable).
 - The raw text (if not parseable as JSON).
+- The HTTP status code and request duration.
 
 Error conditions are logged at ERROR level:
-- Timeout: `[FAST2SMS] Request timed out for phone={phone}`
-- HTTP error: `[FAST2SMS] HTTP {status_code} for phone={phone}`
-- Request failure: `[FAST2SMS] Request failed for phone={phone}: {error}`
+- Timeout: `[FAST2SMS] Request timed out phone_last4={last4}`
+- HTTP error: `[FAST2SMS] HTTP {status_code}`
+- Request failure: `[FAST2SMS] Request failed phone_last4={last4} error={error}`
 - Missing API key: `[FAST2SMS] FAST2SMS_API_KEY is not configured`
 
 ---
 
-## 6. Failure Logging
+## 6. Failure Logging and Audit Trail
 
-All failures are logged to stdout/stderr via Python's `logging` module. There is **no database table** for SMS event tracking.
+All failures are logged to stdout/stderr via Python's `logging` module. Every attempted booking-confirmation SMS is also recorded in `notification_events`.
 
 | Failure | Logged? | Visible in dashboard? |
 |---------|:-------:|:---------------------:|
-| API key missing | Yes (ERROR) | No |
-| Request timeout | Yes (ERROR) | No |
-| HTTP error (≥400) | Yes (ERROR) | No |
-| Fast2SMS returns `{return: false}` | Yes (implicit) | No |
-| General exception | Yes (ERROR) | No |
-| Success | Yes (INFO) | Only via `sms_sent` column |
+| API key missing | Yes (ERROR) | Stored as failed notification event |
+| Request timeout | Yes (ERROR) | Stored as failed notification event |
+| HTTP error (≥400) | Yes (ERROR) | Stored as failed notification event |
+| Fast2SMS returns `{return: false}` | Yes | Stored as failed notification event |
+| General exception | Yes (ERROR) | Stored as failed notification event |
+| Success | Yes (INFO) | Stored as sent notification event and `bookings.sms_sent=true` |
 
 ---
 
@@ -140,9 +150,9 @@ All failures are logged to stdout/stderr via Python's `logging` module. There is
 
 1. `send_booking_sms()` returns `False`.
 2. `send_post_call_booking_sms()` logs: `[SMS] Fast2SMS send failed for call_id={call_id}`.
-3. `sms_sent` remains `false` in the bookings table.
+3. `sms_sent` is released back to `false` in the bookings table.
 4. No retry is attempted.
-5. The failure is not visible in the dashboard (no notification_events table, no SMS status column beyond `sms_sent`).
+5. The failed attempt is stored in `notification_events`.
 6. The call log is already updated (SMS runs after call completion). The call is not affected.
 
 ### Manual recovery
@@ -163,19 +173,34 @@ An operator would need to:
 | `call_id` | Identifies which booking to check |
 | `appointment_time` | Included in SMS message body |
 | `status` | Must be `"confirmed"` for SMS to trigger |
-| `sms_sent` | `false` → eligible for SMS; `true` → already sent |
+| `sms_sent` | `false` -> eligible for SMS; `true` -> claimed/sent |
+
+### notification_events table
+
+| Column | SMS-related usage |
+|--------|------------------|
+| `call_id` | Links the notification attempt to the call and booking |
+| `channel` | Always `sms` for Fast2SMS confirmation messages |
+| `provider` | Always `fast2sms` |
+| `event_type` | `booking_confirmation` |
+| `status` | `sent` or `failed` |
+| `provider_response` | Truncated Fast2SMS response body |
+| `error_message` | Failure reason, if any |
 
 ### SMS message content
 
 ```python
-message = f"Your appointment is confirmed for {details}. Thank you."
+message = f"Your appointment with {business_name} is confirmed for {details}."
+if callback_number:
+    message += f" For help or changes, call {callback_number}."
+message += " Thank you."
 ```
 
 Where `details` is formatted from `appointment_time`:
 - If parseable as ISO 8601: formatted as `"Wednesday, 15 January 2026 at 03:00 PM"`
 - If not parseable: falls back to `"your confirmed appointment"`
 
-The message is hardcoded. There is no customization from the dashboard, no business name, and no callback number in the message.
+`business_name` and `callback_number` come from the active `agent_config` row used by the call. If callback number is blank, that sentence is omitted.
 
 ---
 
@@ -187,17 +212,17 @@ The message is hardcoded. There is no customization from the dashboard, no busin
 - Confirmed-booking-only filter
 - Duplicate prevention via `sms_sent` flag
 - Provider response logging
+- Database audit trail through `notification_events`
 - Timeout handling (10s)
 - HTTP error handling
 - Graceful failure (never crashes the call lifecycle)
+- Business name and callback number in SMS content
 
 ### Not implemented
-- `notification_events` database table for SMS audit trail
-- SMS content customization (business name, callback number, language)
+- Localized SMS content
 - Dashboard visibility of SMS failures
 - Retry mechanism for failed sends
 - SMS status beyond boolean `sms_sent`
-- Localized SMS messages (currently English only)
 - WhatsApp notifications (roadmap only, `notify.py` exists but is orphaned)
 
 ### What the code does NOT do (confirmed by inspection)

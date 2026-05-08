@@ -71,8 +71,8 @@ Standard `npm start` loads the full `node_modules` directory into memory. The st
 
 ### 3.4 Calendar (`/calendar`)
 
-- **Purpose:** Confirmed booking tracker.
-- **Current implementation:** Paginated table with caller name, phone number, appointment time, booking status, SMS sent status, transcript link, and appointment date filters.
+- **Purpose:** Appointment tracker for upcoming and historical bookings.
+- **Current implementation:** Paginated table with caller name, phone number, appointment time, booking status, SMS sent status, transcript link, caller search, status filter, and appointment date filters.
 - **Missing:** Booking cancellation is not implemented.
 
 ### 3.5 Agent Config (`/agent-config`)
@@ -486,7 +486,7 @@ Indian callers frequently code-switch between Hindi and English within the same 
 - Dashboard with operator metrics, language usage, peak call hours, and date range filter
 - CRM table with search, date filters, pagination, caller names, transcript summaries, and booking status
 - CRM transcript detail route
-- Calendar table with confirmed bookings, date filters, pagination, caller names, transcript links, and SMS status
+- Calendar table with all booking statuses, caller search, date filters, pagination, caller names, transcript links, and SMS status
 - Agent Config form (greeting, prompt, primary language, mixed-language mode, VAD)
 - Sidebar navigation with active state
 - Responsive layout (sidebar → top nav on mobile)
