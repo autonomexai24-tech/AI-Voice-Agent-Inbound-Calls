@@ -303,6 +303,16 @@ def _clamp_vad_threshold(value: float) -> float:
     return clamped
 
 
+def _normalize_vad_threshold(value: Any) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        fallback = float(DEFAULT_AGENT_CONFIG["vad_threshold"])
+        logger.warning("[CONFIG] Invalid vad_threshold=%r; using default %.2f", value, fallback)
+        return fallback
+    return _clamp_vad_threshold(parsed)
+
+
 def _normalize_language_code(value: Any) -> str:
     language_code = str(value or DEFAULT_AGENT_CONFIG["language_code"]).strip()
     if language_code in SUPPORTED_LANGUAGE_CODES:
@@ -419,7 +429,7 @@ def _coerce_agent_config(row: dict[str, Any] | None) -> AgentConfig:
             source.get("initial_greeting") or DEFAULT_AGENT_CONFIG["initial_greeting"]
         ),
         system_prompt=str(source.get("system_prompt") or DEFAULT_AGENT_CONFIG["system_prompt"]),
-        vad_threshold=float(source.get("vad_threshold") or DEFAULT_AGENT_CONFIG["vad_threshold"]),
+        vad_threshold=_normalize_vad_threshold(source.get("vad_threshold")),
         language_code=_normalize_language_code(source.get("language_code")),
         mixed_language_enabled=_coerce_bool(
             source.get("mixed_language_enabled")
