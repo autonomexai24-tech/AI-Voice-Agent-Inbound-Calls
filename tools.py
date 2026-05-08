@@ -56,15 +56,25 @@ def _normalize_datetime(date_time: str) -> str:
     return parsed.isoformat()
 
 
+def _clean_phone_number(phone: str) -> str:
+    return phone.replace("+", "").replace(" ", "").replace("-", "").strip()
+
+
 def _booking_payload(name: str, phone: str, date_time: str) -> dict[str, Any]:
-    clean_phone = phone.replace("+", "").replace(" ", "").replace("-", "")
+    clean_name = name.strip()
+    clean_phone = _clean_phone_number(phone)
+    if not clean_name:
+        raise ValueError("caller name is required")
+    if not clean_phone:
+        raise ValueError("caller phone number is required")
+
     return {
         "eventTypeId": _event_type_id(),
         "start": _normalize_datetime(date_time),
         "attendee": {
-            "name": name,
+            "name": clean_name,
             "email": f"{clean_phone or 'caller'}@voiceagent.placeholder",
-            "phoneNumber": phone,
+            "phoneNumber": phone.strip(),
             "timeZone": "Asia/Kolkata",
             "language": "en",
         },
@@ -90,9 +100,10 @@ async def _insert_booking_record(call_id: str, appointment_time: str) -> None:
     )
 
 
-async def _persist_caller_name(call_id: str, name: str) -> None:
+async def _persist_booking_caller_details(call_id: str, name: str, phone: str) -> None:
     clean_name = name.strip()
-    if not clean_name:
+    clean_phone = phone.strip()
+    if not clean_name and not clean_phone:
         return
 
     try:
@@ -100,14 +111,19 @@ async def _persist_caller_name(call_id: str, name: str) -> None:
             lambda: db.execute(
                 """
                 update call_logs
-                set caller_name = %s
+                set caller_name = coalesce(nullif(%s, ''), caller_name),
+                    phone_number = case
+                        when phone_number is null or phone_number = '' or phone_number = 'unknown'
+                        then coalesce(nullif(%s, ''), phone_number)
+                        else phone_number
+                    end
                 where id = %s
                 """,
-                (clean_name, call_id),
+                (clean_name, clean_phone, call_id),
             )
         )
     except Exception as exc:
-        logger.error("[BOOKING] Failed to persist caller_name for call_id=%s: %s", call_id, exc)
+        logger.error("[BOOKING] Failed to persist caller details for call_id=%s: %s", call_id, exc)
 
 
 @llm.function_tool(
@@ -162,7 +178,7 @@ async def book_appointment(
 
         appointment_time = payload["start"]
         await _insert_booking_record(call_id=call_id, appointment_time=appointment_time)
-        await _persist_caller_name(call_id=call_id, name=name)
+        await _persist_booking_caller_details(call_id=call_id, name=name, phone=phone)
         booking_id = response.json().get("data", {}).get("uid", "confirmed")
         total_ms = round((perf_counter() - booking_started_at) * 1000)
         logger.info("[BOOKING] Confirmed booking call_id=%s booking_id=%s duration_ms=%s", call_id, booking_id, total_ms)
