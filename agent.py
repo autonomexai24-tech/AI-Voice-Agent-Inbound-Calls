@@ -28,7 +28,7 @@ DEFAULT_AGENT_CONFIG = {
     "booking_instructions": "Confirm caller name, phone number, date, and time before booking.",
     "initial_greeting": "Hello, thanks for calling. How can I help you today?",
     "system_prompt": "You are a helpful inbound voice assistant.",
-    "vad_threshold": 0.5,
+    "vad_threshold": 0.45,
     "language_code": "en-IN",
     "mixed_language_enabled": False,
 }
@@ -50,8 +50,14 @@ STARTUP_ENV_GROUPS = (
 
 PRACTICAL_VAD_MIN = 0.3
 PRACTICAL_VAD_MAX = 0.7
-ENDPOINTING_MIN_DELAY = 0.2
-ENDPOINTING_MAX_DELAY = 1.0
+ENDPOINTING_MIN_DELAY = 0.15
+ENDPOINTING_MAX_DELAY = 0.8
+MIN_INTERRUPTION_DURATION = 0.3
+FALSE_INTERRUPTION_TIMEOUT = 1.0
+VAD_MIN_SPEECH_DURATION = 0.04
+VAD_MIN_SILENCE_DURATION = 0.35
+VAD_PREFIX_PADDING_DURATION = 0.25
+VAD_MAX_BUFFERED_SPEECH = 12.0
 
 SUPPORTED_LANGUAGE_CODES = {"en-IN", "hi-IN", "kn-IN"}
 LANGUAGE_LABELS = {
@@ -191,7 +197,7 @@ class VoicePipelineAgent:
             llm=openai.LLM(
                 model="gpt-4o",
                 temperature=0.2,
-                max_completion_tokens=160,
+                max_completion_tokens=120,
             ),
             tts=sarvam.TTS(
                 target_language_code=language_config.tts_language_code,
@@ -200,12 +206,18 @@ class VoicePipelineAgent:
                 speech_sample_rate=24000,
             ),
             vad=silero.VAD.load(
+                min_speech_duration=VAD_MIN_SPEECH_DURATION,
+                min_silence_duration=VAD_MIN_SILENCE_DURATION,
+                prefix_padding_duration=VAD_PREFIX_PADDING_DURATION,
+                max_buffered_speech=VAD_MAX_BUFFERED_SPEECH,
                 activation_threshold=vad_threshold,
                 sample_rate=16000,
             ),
             allow_interruptions=True,
+            min_interruption_duration=MIN_INTERRUPTION_DURATION,
             min_endpointing_delay=ENDPOINTING_MIN_DELAY,
             max_endpointing_delay=ENDPOINTING_MAX_DELAY,
+            false_interruption_timeout=FALSE_INTERRUPTION_TIMEOUT,
             preemptive_generation=True,
         )
         _attach_transcript_logging(session, self.call_id)
@@ -250,7 +262,7 @@ class InboundAssistant(Agent):
         response_policy = (
             "\n\n[RESPONSE POLICY]\n"
             "Keep replies short, calm, and receptionist-like. Ask one question at a time. "
-            "Prefer one concise sentence unless confirming appointment details or explaining a booking failure."
+            "Prefer one concise sentence. Use two short sentences only for appointment confirmation or booking failure."
         )
         booking_policy = (
             "\n\n[BOOKING POLICY]\n"
@@ -258,6 +270,7 @@ class InboundAssistant(Agent):
             "and exact appointment date/time. Verbally repeat those details and ask for "
             "explicit confirmation. Call book_appointment only after the caller confirms. "
             'Immediately before calling book_appointment, say only: "One moment while I book that for you." '
+            "After the tool returns, say only the result or ask for one alternate time. "
             "Do not use retrieval or multi-step RAG; rely only on this system prompt and "
             "the caller's current conversation for business context."
         )

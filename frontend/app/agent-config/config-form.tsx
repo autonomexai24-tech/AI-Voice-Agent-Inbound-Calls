@@ -222,7 +222,7 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
             <label className="grid gap-2">
               <FieldLabel
                 label="Booking instructions"
-                detail="Used in the runtime prompt before Cal.com availability and booking calls."
+                detail="Used in the runtime prompt before confirmed Cal.com booking calls."
               />
               <textarea
                 name="bookingInstructions"
@@ -234,7 +234,7 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
             </label>
             <div className="grid gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
               <p className="font-semibold text-neutral-950">Runtime booking flow</p>
-              <p>Ask preferred time, confirm details, speak short filler, check Cal.com availability, then book.</p>
+              <p>Ask preferred time, confirm details, speak short filler, then submit directly to Cal.com.</p>
             </div>
           </Section>
         </div>

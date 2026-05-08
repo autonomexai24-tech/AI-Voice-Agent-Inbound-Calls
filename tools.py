@@ -1,8 +1,9 @@
 import logging
 import os
 import asyncio
+from time import perf_counter
 from contextvars import ContextVar
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 import httpx
@@ -15,6 +16,7 @@ logger = logging.getLogger("agent-tools")
 
 _current_call_id: ContextVar[str | None] = ContextVar("current_call_id", default=None)
 _active_call_id: str | None = None
+CALCOM_TIMEOUT = httpx.Timeout(6.0, connect=2.0, read=5.0, write=3.0, pool=2.0)
 
 
 def set_booking_call_context(call_id: str | None) -> None:
@@ -70,60 +72,6 @@ def _booking_payload(name: str, phone: str, date_time: str) -> dict[str, Any]:
             "notes": f"Booked during inbound AI voice call. Phone: {phone}",
         },
     }
-
-
-def _slot_search_window(date_time: str) -> tuple[str, str]:
-    requested = datetime.fromisoformat(date_time.replace("Z", "+00:00"))
-    if requested.tzinfo is None:
-        requested = requested.replace(tzinfo=timezone.utc)
-    requested_utc = requested.astimezone(timezone.utc)
-    return (
-        (requested_utc - timedelta(hours=12)).isoformat().replace("+00:00", "Z"),
-        (requested_utc + timedelta(hours=12)).isoformat().replace("+00:00", "Z"),
-    )
-
-
-def _slot_matches(slot: Any, requested_start: str) -> bool:
-    if isinstance(slot, str):
-        candidate = slot
-    elif isinstance(slot, dict):
-        candidate = str(slot.get("start") or slot.get("slotStart") or "")
-    else:
-        candidate = ""
-
-    if not candidate:
-        return False
-
-    requested = datetime.fromisoformat(requested_start.replace("Z", "+00:00")).astimezone(timezone.utc)
-    available = datetime.fromisoformat(candidate.replace("Z", "+00:00")).astimezone(timezone.utc)
-    return abs((available - requested).total_seconds()) <= 60
-
-
-async def _check_calcom_availability(client: httpx.AsyncClient, api_key: str, appointment_time: str) -> bool:
-    start, end = _slot_search_window(appointment_time)
-    response = await client.get(
-        "https://api.cal.com/v2/slots",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "cal-api-version": "2024-09-04",
-        },
-        params={
-            "eventTypeId": _event_type_id(),
-            "start": start,
-            "end": end,
-            "timeZone": "Asia/Kolkata",
-            "format": "range",
-        },
-    )
-    if response.status_code >= 400:
-        logger.error("[BOOKING] Cal.com availability failed %s: %s", response.status_code, response.text)
-        return False
-
-    data = response.json().get("data", {})
-    if not isinstance(data, dict):
-        return False
-
-    return any(_slot_matches(slot, appointment_time) for slots in data.values() for slot in (slots or []))
 
 
 async def _insert_booking_record(call_id: str, appointment_time: str) -> None:
@@ -188,12 +136,9 @@ async def book_appointment(
         return f"I could not book that appointment because the booking details are incomplete: {exc}"
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            available = await _check_calcom_availability(client, api_key, payload["start"])
-            if not available:
-                logger.info("[BOOKING] Requested slot unavailable call_id=%s start=%s", call_id, payload["start"])
-                return "That time does not appear to be available. Please share another preferred time."
-
+        booking_started_at = perf_counter()
+        async with httpx.AsyncClient(timeout=CALCOM_TIMEOUT) as client:
+            create_started_at = perf_counter()
             response = await client.post(
                 "https://api.cal.com/v2/bookings",
                 headers={
@@ -203,6 +148,14 @@ async def book_appointment(
                 },
                 json=payload,
             )
+            create_ms = round((perf_counter() - create_started_at) * 1000)
+            logger.info(
+                "[BOOKING] Booking request finished call_id=%s start=%s duration_ms=%s status_code=%s",
+                call_id,
+                payload["start"],
+                create_ms,
+                response.status_code,
+            )
         if response.status_code not in (200, 201):
             logger.error("[BOOKING] Cal.com failed %s: %s", response.status_code, response.text)
             return "I could not complete the booking because the calendar service rejected the request."
@@ -211,7 +164,8 @@ async def book_appointment(
         await _insert_booking_record(call_id=call_id, appointment_time=appointment_time)
         await _persist_caller_name(call_id=call_id, name=name)
         booking_id = response.json().get("data", {}).get("uid", "confirmed")
-        logger.info("[BOOKING] Confirmed booking call_id=%s booking_id=%s", call_id, booking_id)
+        total_ms = round((perf_counter() - booking_started_at) * 1000)
+        logger.info("[BOOKING] Confirmed booking call_id=%s booking_id=%s duration_ms=%s", call_id, booking_id, total_ms)
         return f"Your appointment is confirmed for {appointment_time}. Thank you, {name}."
     except httpx.TimeoutException:
         logger.error("[BOOKING] Cal.com request timed out")
