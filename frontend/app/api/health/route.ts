@@ -6,8 +6,23 @@ export const runtime = "nodejs";
 
 type HealthCheckStatus = "ok" | "missing" | "failed";
 
-function envStatus(name: string): HealthCheckStatus {
-  return process.env[name]?.trim() ? "ok" : "missing";
+const requiredEnvGroups: Array<{ key: string; names: string[] }> = [
+  { key: "databaseUrl", names: ["DATABASE_URL"] },
+  { key: "openaiApiKey", names: ["OPENAI_API_KEY"] },
+  { key: "livekitUrl", names: ["LIVEKIT_URL"] },
+  { key: "livekitApiKey", names: ["LIVEKIT_API_KEY"] },
+  { key: "livekitApiSecret", names: ["LIVEKIT_API_SECRET"] },
+  { key: "sarvamApiKey", names: ["SARVAM_AI_API_KEY", "SARVAM_API_KEY"] },
+  { key: "calcomApiKey", names: ["CALCOM_API_KEY"] },
+  { key: "calcomEventTypeId", names: ["CALCOM_EVENT_TYPE_ID", "CAL_EVENT_TYPE_ID"] },
+  { key: "fast2smsApiKey", names: ["FAST2SMS_API_KEY"] },
+  { key: "dashboardPassword", names: ["DASHBOARD_PASSWORD"] }
+];
+
+const requiredTables = ["call_logs", "transcripts", "bookings", "agent_config", "notification_events"];
+
+function envGroupStatus(names: string[]): HealthCheckStatus {
+  return names.some((name) => process.env[name]?.trim()) ? "ok" : "missing";
 }
 
 function errorMessage(error: unknown) {
@@ -19,9 +34,9 @@ function errorMessage(error: unknown) {
 }
 
 function redactKnownSecrets(message: string) {
-  const secrets = [process.env.DATABASE_URL, process.env.DASHBOARD_PASSWORD].filter(
-    (value): value is string => Boolean(value?.trim())
-  );
+  const secrets = requiredEnvGroups
+    .flatMap((group) => group.names.map((name) => process.env[name]))
+    .filter((value): value is string => Boolean(value?.trim()));
 
   return secrets.reduce((redacted, secret) => redacted.replaceAll(secret, "***"), message);
 }
@@ -31,14 +46,39 @@ export async function GET() {
   const checks: Record<string, HealthCheckStatus> = {
     app: "ok",
     database: "ok",
-    dashboardPassword: envStatus("DASHBOARD_PASSWORD")
+    schema: "ok"
   };
+  for (const group of requiredEnvGroups) {
+    checks[group.key] = envGroupStatus(group.names);
+  }
+
+  const calcomEventTypeId = process.env.CALCOM_EVENT_TYPE_ID || process.env.CAL_EVENT_TYPE_ID || "";
+  if (checks.calcomEventTypeId === "ok" && !Number.isInteger(Number(calcomEventTypeId))) {
+    checks.calcomEventTypeId = "failed";
+  }
+
   let databaseError: string | null = null;
 
   try {
-    await queryPostgres("select 1 as ok");
+    await queryPostgres(
+      `
+      select to_regclass('public.call_logs') as call_logs,
+             to_regclass('public.transcripts') as transcripts,
+             to_regclass('public.bookings') as bookings,
+             to_regclass('public.agent_config') as agent_config,
+             to_regclass('public.notification_events') as notification_events
+      `
+    ).then((result) => {
+      const row = result.rows[0] as Record<string, string | null> | undefined;
+      const missingTables = requiredTables.filter((table) => !row?.[table]);
+      if (missingTables.length > 0) {
+        checks.schema = "failed";
+        databaseError = `Missing required table(s): ${missingTables.join(", ")}`;
+      }
+    });
   } catch (error) {
     checks.database = "failed";
+    checks.schema = "failed";
     databaseError = errorMessage(error);
   }
 

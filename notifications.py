@@ -1,5 +1,6 @@
 import logging
 import os
+from time import perf_counter
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -58,6 +59,7 @@ async def send_booking_sms_with_result(
     }
 
     try:
+        started_at = perf_counter()
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 FAST2SMS_URL,
@@ -67,11 +69,12 @@ async def send_booking_sms_with_result(
                 },
                 json=payload,
             )
+        duration_ms = round((perf_counter() - started_at) * 1000)
     except httpx.TimeoutException:
-        logger.error("[FAST2SMS] Request timed out")
+        logger.error("[FAST2SMS] Request timed out phone_last4=%s", phone_number[-4:])
         return SmsSendResult(sent=False, error_message="Fast2SMS request timed out")
     except Exception as exc:
-        logger.error("[FAST2SMS] Request failed: %s", exc)
+        logger.error("[FAST2SMS] Request failed phone_last4=%s error=%s", phone_number[-4:], exc)
         return SmsSendResult(sent=False, error_message=str(exc))
 
     try:
@@ -80,7 +83,13 @@ async def send_booking_sms_with_result(
         response_payload = {"raw": response.text}
 
     provider_response = _truncate_provider_response(response_payload)
-    logger.info("[FAST2SMS] Response payload: %s", provider_response)
+    logger.info(
+        "[FAST2SMS] Request finished phone_last4=%s status_code=%s duration_ms=%s provider_response=%s",
+        phone_number[-4:],
+        response.status_code,
+        duration_ms,
+        provider_response,
+    )
     if response.status_code >= 400:
         logger.error("[FAST2SMS] HTTP %s", response.status_code)
         return SmsSendResult(
