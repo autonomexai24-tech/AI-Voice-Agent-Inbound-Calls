@@ -197,7 +197,7 @@ class VoicePipelineAgent:
             llm=openai.LLM(
                 model="gpt-4o",
                 temperature=0.2,
-                max_completion_tokens=120,
+                max_completion_tokens=150,
             ),
             tts=sarvam.TTS(
                 target_language_code=language_config.tts_language_code,
@@ -262,7 +262,10 @@ class InboundAssistant(Agent):
         response_policy = (
             "\n\n[RESPONSE POLICY]\n"
             "Keep replies short, calm, and receptionist-like. Ask one question at a time. "
-            "Prefer one concise sentence. Use two short sentences only for appointment confirmation or booking failure."
+            "Prefer one concise sentence. Use two short sentences only for appointment confirmation or booking failure. "
+            "Never leave dead air. If you need time to process, say a brief filler like "
+            '"One moment" or "Let me check that." '
+            "Do not pause silently for more than one second."
         )
         booking_policy = (
             "\n\n[BOOKING POLICY]\n"
