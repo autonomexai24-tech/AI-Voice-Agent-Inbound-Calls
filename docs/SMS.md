@@ -223,10 +223,10 @@ Where `details` is formatted from `appointment_time`:
 - Dashboard visibility of SMS failures
 - Retry mechanism for failed sends
 - SMS status beyond boolean `sms_sent`
-- WhatsApp notifications (roadmap only, `notify.py` exists but is orphaned)
+- WhatsApp notifications (roadmap only, archived `archive-docs/legacy-runtime/notify.py` exists but is orphaned)
 
 ### What the code does NOT do (confirmed by inspection)
 - Does not send SMS for non-booking calls.
 - Does not send SMS during a call.
 - Does not send SMS for missed or abandoned calls.
-- Does not use Telegram or WhatsApp for booking notifications (`notify.py` is not imported by any active code).
+- Does not use Telegram or WhatsApp for booking notifications (`archive-docs/legacy-runtime/notify.py` is not imported by any active code).

@@ -59,7 +59,7 @@ Caller dials DID number
 
 - **Runtime:** Python 3.11, LiveKit Agents SDK
 - **STT:** Sarvam AI `saaras:v3` (auto-detect or configured language)
-- **LLM:** OpenAI `gpt-4o` with `max_completion_tokens=160`
+- **LLM:** OpenAI `gpt-4o` with `max_completion_tokens=150`
 - **TTS:** Sarvam AI `bulbul:v3` (language and speaker from config)
 - **VAD:** Silero with configurable `activation_threshold` from dashboard
 - **Tools:** `book_appointment` — Cal.com booking with verbal confirmation required
@@ -87,7 +87,7 @@ Caller dials DID number
 
 - **Engine:** Easypanel-managed PostgreSQL
 - **Connection:** `DATABASE_URL` with internal Docker service name
-- **Tables:** `call_logs`, `transcripts`, `bookings`, `agent_config`
+- **Tables:** `call_logs`, `transcripts`, `bookings`, `agent_config`, `notification_events`
 - **Init:** `init_db.py` with 30-retry startup loop; `start.sh` runs it before Supervisor
 
 ### 3.7 Deployment

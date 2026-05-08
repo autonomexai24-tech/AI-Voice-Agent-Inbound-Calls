@@ -36,6 +36,7 @@ Set these values in Easypanel environment variables before deployment:
 | `FAST2SMS_API_KEY` | Yes | Booking confirmation SMS |
 | `DASHBOARD_PASSWORD` | Yes | Dashboard access |
 | `DASHBOARD_SESSION_MAX_AGE` | No | Session duration in seconds (default: 43200 = 12 hours) |
+| `ALLOW_FULL_VAD_RANGE` | No | Emergency VAD override; allows 0.0-1.0 runtime clamp instead of the practical 0.3-0.7 range |
 
 Rules:
 
@@ -43,6 +44,7 @@ Rules:
 - Percent-encode special characters in database passwords.
 - Do not expose PostgreSQL publicly.
 - Do not add `NEXT_PUBLIC_` to secrets.
+- Leave `ALLOW_FULL_VAD_RANGE` unset unless debugging a known VAD issue during supervised testing.
 - Store a separate offline copy of production env values in the operator password manager.
 
 ---

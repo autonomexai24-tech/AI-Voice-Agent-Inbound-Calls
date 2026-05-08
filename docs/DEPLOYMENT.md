@@ -348,7 +348,7 @@ Fail fast with clear error messages if any required variable is missing.
 
 ### Legacy runtime files
 
-`ui_server.py`, `notify.py`, `calendar_tools.py`, and `config.json` are preserved for reference/backward compatibility but are not started by Supervisor. Production runtime entrypoints remain `agent.py`, `tools.py`, `notifications.py`, `init_db.py`, and the Next.js standalone dashboard.
+Legacy runtime files are archived under `archive-docs/legacy-runtime/` for reference and are not present in the active root runtime path. Production runtime entrypoints remain `agent.py`, `tools.py`, `notifications.py`, `init_db.py`, and the Next.js standalone dashboard.
 
 ---
 

@@ -31,6 +31,10 @@ The result is coerced into an `AgentConfig` dataclass:
 ```python
 @dataclass(frozen=True)
 class AgentConfig:
+    business_name: str
+    business_phone: str
+    business_timezone: str
+    booking_instructions: str
     initial_greeting: str
     system_prompt: str
     vad_threshold: float
@@ -153,20 +157,27 @@ tts=sarvam.TTS(
 
 ```python
 vad=silero.VAD.load(
+    min_speech_duration=0.04,
+    min_silence_duration=0.35,
+    prefix_padding_duration=0.25,
+    max_buffered_speech=12.0,
     activation_threshold=vad_threshold,
     sample_rate=16000,
 ),
 allow_interruptions=True,
-min_endpointing_delay=0.2,
-max_endpointing_delay=1.0,
+min_interruption_duration=0.3,
+min_endpointing_delay=0.15,
+max_endpointing_delay=0.8,
+false_interruption_timeout=1.0,
 preemptive_generation=True,
 ```
 
 - **VAD model:** Silero — lightweight voice activity detection.
 - **Threshold:** Loaded from `agent_config.vad_threshold` (default 0.5). Clamped to the practical 0.3–0.7 telephony range by `_clamp_vad_threshold()`. Set `ALLOW_FULL_VAD_RANGE=true` only for emergency full-range override.
 - **Interruptions:** Enabled — caller can interrupt the agent mid-speech.
-- **Endpointing:** 200ms minimum, 1000ms maximum — determines how long to wait after speech stops before triggering a turn.
+- **Endpointing:** 150ms minimum, 800ms maximum — determines how long to wait after speech stops before triggering a turn.
 - **Preemptive generation:** Enabled — LLM starts generating before the turn is fully complete, reducing perceived latency.
+- **False interruption timeout:** 1.0s — if an interruption lasts shorter than this, it's treated as background noise.
 
 ### Risk
 
@@ -219,15 +230,20 @@ If `call_id` is `None` (because the initial call_log insert failed), transcript 
 
 ## 11. How Summary Saving Works
 
-### Current state: NOT IMPLEMENTED
+### Current state: IMPLEMENTED
 
-There is no summary generation or storage. The `call_logs` table has no `summary` column. The dashboard CRM page builds a `transcriptSummary` by concatenating raw transcript turns (capped at 180 chars), but this is not a semantic summary.
+The `call_logs` table has a `summary` column. After each call ends, `complete_call_log()` calls `_build_call_summary()` to generate a rule-based summary:
 
-### What is needed later
+```python
+def _build_call_summary(outcome: str | None, duration: int) -> str:
+    if outcome == "booked":
+        return f"Booked appointment during a {duration}s call."
+    if outcome == "agent_start_failed":
+        return "Agent failed to start; call did not complete normally."
+    return f"Call completed without a confirmed booking in {duration}s."
+```
 
-- Add `summary` column to `call_logs`.
-- Generate summary after call ends (post-call, not blocking conversation).
-- Options: use LLM to summarize transcript, or store a simple outcome description.
+This is a deterministic, zero-latency summary. It does not use LLM summarization (which would add cost and latency). The CRM detail page also builds a `transcriptSummary` by concatenating raw transcript turns for quick operator review.
 
 ---
 
@@ -292,12 +308,19 @@ The system uses soft, caller-friendly language for all error conditions:
 - **Transcript drain timeout:** 2 seconds may not be enough for slow DB connections.
 
 ### Missing
-- Call summary generation
-- Audio recording / storage
-- Health endpoint
-- SIGTERM graceful shutdown
-- Environment variable validation at startup
-- Caller name persistence to call_logs
+- Audio recording / storage (by design — no LiveKit recording integration yet)
+
+### Implemented since initial writing (Parts 11–15)
+- Call summary generation (`_build_call_summary` in `complete_call_log`)
+- Health endpoint (`/api/health` in Next.js)
+- SIGTERM graceful shutdown (`ctx.add_shutdown_callback` → `finalize_call`)
+- Environment variable validation at startup (`validate_startup_environment()`)
+- Caller name persistence to call_logs (`_persist_booking_caller_details` in `tools.py`)
+- Structured JSON logging (`log_event()`)
+- Secret redaction in error logs (`_redact_secret_values()`)
+- SMS audit trail (`notification_events` table)
+- Configurable session duration (`DASHBOARD_SESSION_MAX_AGE`)
+- Logout endpoint (`POST /api/logout`)
 
 ### Must not be changed lightly
 - `entrypoint()` function structure — it's the core lifecycle coordinator.

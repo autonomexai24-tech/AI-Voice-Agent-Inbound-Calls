@@ -16,16 +16,16 @@
 | `db.py` | PostgreSQL connection helpers via `psycopg2` with context manager |
 | `tools.py` | Cal.com booking tool; LLM-callable `book_appointment` with verbal confirmation |
 | `notifications.py` | Fast2SMS post-booking SMS sender with duplicate prevention |
-| `calendar_tools.py` | Cal.com slot fetching + Google Calendar fallback (legacy, not used in active flow) |
+| `archive-docs/legacy-runtime/calendar_tools.py` | Cal.com slot fetching + Google Calendar fallback (legacy, not used in active flow) |
 | `init_db.py` | Schema initialization with 30-retry startup loop |
 | `start.sh` | Container startup: runs init_db.py then launches Supervisor |
 | `supervisord.conf` | Runs `python agent.py start` + `node server.js` from `.next/standalone` |
 | `Dockerfile` | Multi-stage: Node builder → Python builder → python:3.11-slim runtime with ffmpeg + Supervisor |
 | `schema.sql` | Table definitions + default agent_config seed |
-| `config.json` | Legacy placeholder (all values empty, not used by active code) |
-| `ui_server.py` | Dead legacy FastAPI dashboard (returns 410 / disabled page) |
-| `make_call.py` | Outbound call dispatcher utility (not used in inbound flow) |
-| `notify.py` | Telegram/WhatsApp webhook utilities (not wired to call flow) |
+| `archive-docs/legacy-runtime/config.json` | Legacy placeholder (all values empty, not used by active code) |
+| `archive-docs/legacy-runtime/ui_server.py` | Dead legacy FastAPI dashboard (returns 410 / disabled page) |
+| `archive-docs/legacy-runtime/make_call.py` | Outbound call dispatcher utility (not used in active flow) |
+| `archive-docs/legacy-runtime/notify.py` | Telegram/WhatsApp webhook utilities (not wired to call flow) |
 | `requirements.txt` | Python dependencies |
 
 ### Frontend (frontend/)
@@ -105,10 +105,10 @@ agent_config:  id (uuid), initial_greeting, system_prompt, vad_threshold, langua
 | **No transcript detail view** | Medium | No per-call transcript page |
 | **No caller_name column in call_logs** | Medium | Booking collects name but it's not persisted to call_logs |
 | **No call summary column** | Low | `agent.md` says "persist summary" but schema has no place for it |
-| **`notify.py` orphaned** | Low | Telegram/WhatsApp code exists but never called from agent.py |
-| **`ui_server.py` dead code** | Low | Returns 410; should eventually be removed |
-| **`calendar_tools.py` legacy** | Low | Uses wrong env var names (`CAL_API_KEY`); not in active flow |
-| **`config.json` legacy** | Low | Empty placeholder, not used by active code |
+| **Archived `notify.py` orphaned** | Low | Telegram/WhatsApp code exists in `archive-docs/legacy-runtime/notify.py` but is never called from agent.py |
+| **Archived `ui_server.py` dead code** | Low | `archive-docs/legacy-runtime/ui_server.py` returns 410 and is not part of the runtime |
+| **Archived `calendar_tools.py` legacy** | Low | Archived availability helper is not in the active root runtime path |
+| **Archived `config.json` legacy** | Low | Empty placeholder archived for reference, not used by active code |
 | **Python DB: no connection pooling** | Low | Each query opens a new TCP connection; acceptable at current scale |
 | **Cal.com API version pinned** | Low | `cal-api-version: 2024-08-13` may be deprecated by Cal.com |
 
@@ -208,7 +208,7 @@ These are specific code locations that need attention in Parts 11–15:
 
 1. **Supabase → PostgreSQL migration residue.** The data layer migration is structurally complete, but UI labels, dead `supabase-server.ts`, and archived docs still reference Supabase. No Supabase SDK is used in active code.
 2. **Language_code declared but never wired.** The schema and archived `agent.md` both declare `language_code` support, but zero runtime code uses it. TTS is hardcoded to Hindi.
-3. **Port inconsistency.** `supervisord.conf` and Dockerfile now use port 3000 for the dashboard. Older archived docs reference port 8000. The `ui_server.py` shim still mentions 8000.
-4. **Outbound remnants.** `make_call.py`, `setup_trunk.py`, `transfer_call.md`, and outbound references in archived docs are present but not part of the inbound platform.
+3. **Port inconsistency.** `supervisord.conf` and Dockerfile now use port 3000 for the dashboard. Older archived docs reference port 8000. The archived `ui_server.py` shim still mentions 8000.
+4. **Outbound remnants.** `archive-docs/legacy-runtime/make_call.py`, `setup_trunk.py`, `transfer_call.md`, and outbound references in archived docs are present but not part of the inbound platform.
 5. **Booking approach divergence.** Archived `mpconfig.md` describes a post-call MCP/Google Calendar approach. Active code uses during-call Cal.com booking via `tools.py`. Both are valid approaches but only the Cal.com path is production code.
-6. **Notification provider divergence.** `notify.py` contains Telegram/WhatsApp code. `notifications.py` contains the active Fast2SMS code. They are separate files with no connection.
+6. **Notification provider divergence.** `archive-docs/legacy-runtime/notify.py` contains Telegram/WhatsApp code. `notifications.py` contains the active Fast2SMS code. They are separate files with no connection.

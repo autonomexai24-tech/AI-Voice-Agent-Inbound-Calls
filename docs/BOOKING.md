@@ -1,6 +1,6 @@
 # BOOKING.md — Booking Behavior
 
-> **Source files:** `tools.py`, `agent.py` (booking policy + finalize_call), `calendar_tools.py` (legacy, not active)
+> **Source files:** `tools.py`, `agent.py` (booking policy + finalize_call), `archive-docs/legacy-runtime/calendar_tools.py` (legacy, not active)
 > **Subordinate to:** `/docs/PLAN.md`
 > **Last verified against code:** 2026-05-08
 
@@ -61,7 +61,7 @@ The intended flow:
 
 There is **no availability check** before booking. The agent collects a preferred time and sends it directly to Cal.com. If the slot is unavailable, Cal.com rejects the booking, and the agent speaks a soft error.
 
-The `calendar_tools.py` file contains a `get_available_slots()` function that can check Cal.com availability, but it is **not wired** into the active booking tool in `tools.py` and is not imported by `agent.py`.
+The archived `archive-docs/legacy-runtime/calendar_tools.py` file contains a `get_available_slots()` function that can check Cal.com availability, but it is **not wired** into the active booking tool in `tools.py` and is not imported by `agent.py`.
 
 ---
 
@@ -73,7 +73,7 @@ The active booking tool (`tools.py:book_appointment`) does not check availabilit
 
 ### What exists but is inactive
 
-`calendar_tools.py` contains:
+`archive-docs/legacy-runtime/calendar_tools.py` contains:
 - `get_available_slots(date_str)` — fetches open slots from Cal.com v1 API or Google Calendar.
 - `async_create_booking()` — duplicate booking path (Cal.com v2 or Google Calendar).
 - `cancel_booking()` — Cal.com v1 cancellation.

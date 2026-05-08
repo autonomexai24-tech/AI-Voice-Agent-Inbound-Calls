@@ -218,19 +218,19 @@ All other documented behaviors were verified against source code:
 
 | Risk | Severity | Notes |
 |------|----------|-------|
-| Health endpoint gaps | Low | `/api/health` now checks app, DB, and dashboard auth readiness. |
-| SIGTERM handling gaps | Medium | Supervisor now sends TERM to process groups and allows call finalization time. |
-| Env var validation gaps | Low | Worker validates required production env vars and DB connectivity at startup. |
-| DB init failure blocks startup | Low | Intentional fail-fast production behavior, documented. |
+| No health endpoint | **High** | Easypanel cannot detect unhealthy container. Part 14. |
+| No SIGTERM handling | **High** | Active calls lose finalization on deploy. Part 14. |
+| No env var validation at startup | Medium | Silent failures if key missing. Part 14. |
+| DB init failure doesn't block startup | Low | Intentional design, documented. |
 
 ### Operational risks
 
 | Risk | Severity | Notes |
 |------|----------|-------|
-| SMS failures invisible in dashboard | Low | `notification_events` stores sent/failed SMS audit records. |
-| Limited structured logging | Low | Startup, shutdown finalization, and notification audit events emit JSON log records. |
-| DATABASE_URL may leak in some non-startup error logs | Low | Startup and health errors redact known secret values. |
-| Phone numbers logged as PII | Low | Reduced in SMS logs; caller ID logs remain for debugging. |
+| SMS failures invisible in dashboard | Medium | Only in server logs. Part 14 adds audit table. |
+| No structured logging | Medium | Harder to debug. Part 14. |
+| DATABASE_URL may leak in error logs | Medium | Part 14: secret redaction. |
+| Phone numbers logged as PII | Low | Part 14: masking. |
 
 ---
 
@@ -382,8 +382,11 @@ These architectural decisions are strategically correct and should remain stable
 
 | Gap | Priority | Target |
 |-----|----------|--------|
-| Broader structured logging coverage | Low | Later hardening |
-| Dashboard view for `notification_events` | Low | Later operator polish |
+| No `/api/health` endpoint | **High** | Part 14 |
+| No structured logging | Medium | Part 14 |
+| No env var validation at startup | Medium | Part 14 |
+| No secret redaction in error logs | Medium | Part 14 |
+| `notification_events` table for SMS audit trail | Medium | Part 14 |
 
 ### Missing auth evolution
 
@@ -398,8 +401,9 @@ These architectural decisions are strategically correct and should remain stable
 
 | Gap | Priority | Target |
 |-----|----------|--------|
-| Health endpoint coverage beyond DB/auth | Low | Later hardening |
-| Active call drain under forced SIGKILL | Medium | Operational timeout risk |
+| No Easypanel health check endpoint | **High** | Part 14 |
+| No SIGTERM graceful shutdown | **High** | Part 14 |
+| No startup env var validation | Medium | Part 14 |
 
 ### Missing language wiring
 
@@ -485,9 +489,12 @@ These can be done immediately without violating execution order:
 
 **What separates it from "production-ready" (without MVP qualifier):**
 
-- Forced process termination can still interrupt active calls if the platform exceeds graceful shutdown timeout.
-- Notification audit records exist, but no dedicated dashboard surface has been added yet.
-- Brute-force login rate limiting and logout remain later hardening items.
+- Language wiring incomplete (TTS hardcoded to Hindi).
+- No health endpoint (Easypanel can't detect failures).
+- No SIGTERM handling (deploys may drop active calls).
+- No booking filler speech (10s dead air risk).
+- Stale UI labels (Supabase references).
+- No CRM search or date filters.
 
 **These gaps are addressed by Parts 11–15.** After completing the roadmap, the system would graduate to "production-ready" without the MVP qualifier.
 
@@ -517,7 +524,7 @@ These can be done immediately without violating execution order:
 | # | Issue | Severity | Location | Fix |
 |---|-------|----------|----------|-----|
 | 1 | Session cookie has 12h maxAge but docs said "no expiration" | Medium | SECURITY.md §11, §12 | ✅ Corrected |
-| 2 | "Checks availability" in booking flow — no check exists | Low | PLAN.md §3.4, PLAN.md §8 preset, LOGIC.md §4 | ✅ Corrected (4 instances across 3 docs) |
+| 2 | PLAN.md §3.4 said "checks availability" but no check exists | Low | PLAN.md §3.4 | ✅ Corrected |
 | 3 | Concurrent call estimate (50–200) was unverified | Low | DEPLOYMENT.md §15 | ✅ Caveat added |
 | 4 | Stale "Supabase service role" labels in two pages | Medium | dashboard/page.tsx:50, agent-config/page.tsx:18 | Part 13 deliverable (runtime code, not docs) |
 
@@ -526,7 +533,7 @@ These can be done immediately without violating execution order:
 | # | Hallucination | Severity | Correction |
 |---|--------------|----------|------------|
 | 1 | "No session expiration" — cookie has `maxAge: 43200` (12h) | Medium | ✅ SECURITY.md corrected |
-| 2 | "Checks availability" in booking flow — no availability check exists | Low | ✅ PLAN.md + LOGIC.md corrected (4 instances) |
+| 2 | "Checks availability" in booking flow — no availability check exists | Low | ✅ PLAN.md corrected |
 | 3 | "50–200 concurrent calls" — not benchmarked | Low | ✅ DEPLOYMENT.md caveat added |
 
 ### Unrealistic assumptions
