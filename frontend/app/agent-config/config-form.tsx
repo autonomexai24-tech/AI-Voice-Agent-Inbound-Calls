@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import type { AgentConfig, LanguageCode } from "../../lib/agent-config-data";
@@ -16,6 +16,8 @@ const languageOptions: Array<{ label: string; value: LanguageCode; voice: string
   { label: "Hindi", value: "hi-IN", voice: "Kavya", stt: "Hindi language hint" },
   { label: "Kannada", value: "kn-IN", voice: "Kavitha", stt: "Kannada language hint" }
 ];
+
+type LanguageMode = LanguageCode | "mixed";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -62,14 +64,22 @@ function Section({
 
 export function AgentConfigForm({ config }: { config: AgentConfig }) {
   const [state, formAction] = useActionState(saveAgentConfig, initialState);
-  const selectedLanguage = useMemo(
-    () => languageOptions.find((option) => option.value === config.languageCode) ?? languageOptions[0],
-    [config.languageCode]
+  const [languageMode, setLanguageMode] = useState<LanguageMode>(
+    config.mixedLanguageEnabled ? "mixed" : config.languageCode
   );
+  const [primaryLanguage, setPrimaryLanguage] = useState<LanguageCode>(config.languageCode);
+  const selectedLanguage = useMemo(
+    () => languageOptions.find((option) => option.value === primaryLanguage) ?? languageOptions[0],
+    [primaryLanguage]
+  );
+  const mixedLanguageEnabled = languageMode === "mixed";
+  const persistedLanguageCode = mixedLanguageEnabled ? primaryLanguage : (languageMode as LanguageCode);
 
   return (
     <form action={formAction} className="mt-6 grid gap-5">
       <input type="hidden" name="id" value={config.id ?? ""} />
+      <input type="hidden" name="languageCode" value={persistedLanguageCode} />
+      <input type="hidden" name="mixedLanguageEnabled" value={mixedLanguageEnabled ? "on" : ""} />
 
       {state.status !== "idle" ? (
         <div
@@ -119,22 +129,37 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
           </Section>
 
           <Section eyebrow="Multilingual" title="Language and voice behavior">
-            <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-              <label className="grid gap-2">
-                <FieldLabel label="Primary language" detail="Locks TTS voice and fixed-language STT hint." />
-                <select
-                  name="languageCode"
-                  defaultValue={config.languageCode}
-                  required
-                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
-                >
-                  {languageOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+              <div className="grid gap-2">
+                <FieldLabel label="Language mode" detail="Choose one fixed language or lightweight mixed-language mode." />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {[...languageOptions, { label: "Mixed Language", value: "mixed" as const, voice: "Primary voice", stt: "Auto-detect" }].map(
+                    (option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          setLanguageMode(option.value);
+                          if (option.value !== "mixed") {
+                            setPrimaryLanguage(option.value);
+                          }
+                        }}
+                        className={[
+                          "rounded-lg border px-3 py-3 text-left text-sm transition",
+                          languageMode === option.value
+                            ? "border-neutral-950 bg-neutral-950 text-white"
+                            : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400"
+                        ].join(" ")}
+                      >
+                        <span className="font-semibold">{option.label}</span>
+                        <span className={languageMode === option.value ? "mt-1 block text-xs text-neutral-300" : "mt-1 block text-xs text-neutral-500"}>
+                          {option.stt}
+                        </span>
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
               <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
                 <p className="text-sm font-semibold text-neutral-950">Current voice route</p>
                 <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
@@ -145,27 +170,28 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
                   <div>
                     <p className="text-xs uppercase text-neutral-500">STT mode</p>
                     <p className="mt-1 font-medium text-neutral-900">
-                      {config.mixedLanguageEnabled ? "Auto-detect" : selectedLanguage.stt}
+                      {mixedLanguageEnabled ? "Auto-detect" : selectedLanguage.stt}
                     </p>
                   </div>
                 </div>
               </div>
             </div>
-            <label className="flex items-start gap-3 rounded-lg border border-neutral-200 bg-white px-4 py-3">
-              <input
-                name="mixedLanguageEnabled"
-                type="checkbox"
-                defaultChecked={config.mixedLanguageEnabled}
-                className="mt-1 h-4 w-4 rounded border-neutral-300 text-neutral-950"
-              />
-              <span className="grid gap-1">
-                <span className="text-sm font-semibold text-neutral-900">Mixed-language mode</span>
-                <span className="text-xs leading-5 text-neutral-500">
-                  STT uses auto-detection for English, Hindi, and Kannada while the assistant keeps one primary
-                  voice for the call.
-                </span>
-              </span>
-            </label>
+            {mixedLanguageEnabled ? (
+              <label className="grid gap-2 sm:max-w-sm">
+                <FieldLabel label="Primary voice for mixed mode" detail="STT auto-detects speech; TTS uses this voice." />
+                <select
+                  value={primaryLanguage}
+                  onChange={(event) => setPrimaryLanguage(event.target.value as LanguageCode)}
+                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
+                >
+                  {languageOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label} voice
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
           </Section>
 
           <Section eyebrow="Conversation" title="Prompt and greeting">
@@ -247,7 +273,7 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
               </div>
               <div className="flex justify-between gap-3">
                 <span className="text-neutral-400">Mixed mode</span>
-                <span className="font-medium">{config.mixedLanguageEnabled ? "On" : "Off"}</span>
+                <span className="font-medium">{mixedLanguageEnabled ? "On" : "Off"}</span>
               </div>
               <div className="flex justify-between gap-3">
                 <span className="text-neutral-400">VAD</span>
