@@ -41,6 +41,9 @@ export type CrmFilters = {
   query?: string | null;
   from?: string | null;
   to?: string | null;
+  booking?: string | null;
+  language?: string | null;
+  repeat?: string | null;
   page?: string | number | null;
 };
 
@@ -166,6 +169,14 @@ function languageLabel(languageCode: string | null, mixedLanguageEnabled: boolea
   return "English";
 }
 
+function normalizeBookingFilter(value: string | null | undefined) {
+  return ["confirmed", "none", "pending"].includes(value ?? "") ? value : null;
+}
+
+function normalizeLanguageFilter(value: string | null | undefined) {
+  return ["en-IN", "hi-IN", "kn-IN", "mixed"].includes(value ?? "") ? value : null;
+}
+
 function buildCallRow(
   call: CallLogRow,
   transcriptsByCall: Map<string, TranscriptRow[]>,
@@ -224,6 +235,37 @@ export async function getCrmCalls(filters: CrmFilters = {}): Promise<OperationsR
   if (search) {
     values.push(`%${search}%`);
     conditions.push(`(phone_number ilike $${values.length} or caller_name ilike $${values.length})`);
+  }
+
+  const bookingFilter = normalizeBookingFilter(filters.booking);
+  if (bookingFilter === "confirmed") {
+    conditions.push("exists (select 1 from bookings b where b.call_id = call_logs.id and b.status = 'confirmed')");
+  } else if (bookingFilter === "pending") {
+    conditions.push("exists (select 1 from bookings b where b.call_id = call_logs.id and b.status <> 'confirmed')");
+  } else if (bookingFilter === "none") {
+    conditions.push("not exists (select 1 from bookings b where b.call_id = call_logs.id)");
+  }
+
+  const languageFilter = normalizeLanguageFilter(filters.language);
+  if (languageFilter === "mixed") {
+    conditions.push("mixed_language_enabled = true");
+  } else if (languageFilter) {
+    values.push(languageFilter);
+    conditions.push("mixed_language_enabled = false");
+    conditions.push(`language_code = $${values.length}`);
+  }
+
+  if (filters.repeat === "true") {
+    conditions.push(`
+      exists (
+        select 1
+        from call_logs history
+        where history.phone_number = call_logs.phone_number
+          and history.phone_number is not null
+          and history.phone_number <> 'unknown'
+          and history.id <> call_logs.id
+      )
+    `);
   }
 
   const whereClause = conditions.length > 0 ? `where ${conditions.join(" and ")}` : "";

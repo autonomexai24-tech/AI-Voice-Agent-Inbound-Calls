@@ -21,6 +21,15 @@ type PeakHourRow = {
   calls: string | number | null;
 };
 
+type RecentBookingRow = {
+  call_id: string;
+  appointment_time: string | null;
+  status: string | null;
+  sms_sent: boolean | null;
+  phone_number: string | null;
+  caller_name: string | null;
+};
+
 export type LanguageUsageMetric = {
   label: string;
   calls: number;
@@ -29,6 +38,15 @@ export type LanguageUsageMetric = {
 export type PeakHourMetric = {
   hour: number;
   calls: number;
+};
+
+export type RecentBookingMetric = {
+  callId: string;
+  appointmentTime: string | null;
+  status: string;
+  smsSent: boolean;
+  phoneNumber: string;
+  callerName: string;
 };
 
 export type DashboardMetrics = {
@@ -40,6 +58,7 @@ export type DashboardMetrics = {
   repeatCallers: number;
   languageUsage: LanguageUsageMetric[];
   peakCallHours: PeakHourMetric[];
+  recentBookings: RecentBookingMetric[];
   dateRange: DateRangeKey;
   configured: boolean;
   error?: string;
@@ -61,6 +80,7 @@ const emptyMetrics: DashboardMetrics = {
   repeatCallers: 0,
   languageUsage: [],
   peakCallHours: [],
+  recentBookings: [],
   dateRange: "30d",
   configured: false
 };
@@ -105,7 +125,7 @@ export async function getDashboardMetrics(range?: string | null): Promise<Dashbo
   const callDateFilter = dateRangeCondition("start_time", dateRange);
 
   try {
-    const [metricsResult, languageResult, peakHourResult] = await Promise.all([
+    const [metricsResult, languageResult, peakHourResult, recentBookingsResult] = await Promise.all([
       queryPostgres<MetricRow>(
         `
         with filtered_calls as (
@@ -156,6 +176,23 @@ export async function getDashboardMetrics(range?: string | null): Promise<Dashbo
         order by calls desc, call_hour asc
         limit 3
         `
+      ),
+      queryPostgres<RecentBookingRow>(
+        `
+        select
+          b.call_id,
+          b.appointment_time,
+          b.status,
+          b.sms_sent,
+          c.phone_number,
+          c.caller_name
+        from bookings b
+        join call_logs c on c.id = b.call_id
+        where b.status = 'confirmed'
+          and ${dateRangeCondition("c.start_time", dateRange)}
+        order by b.appointment_time desc nulls last
+        limit 5
+        `
       )
     ]);
 
@@ -177,6 +214,14 @@ export async function getDashboardMetrics(range?: string | null): Promise<Dashbo
       peakCallHours: peakHourResult.rows.map((row) => ({
         hour: toNumber(row.call_hour),
         calls: toNumber(row.calls)
+      })),
+      recentBookings: recentBookingsResult.rows.map((row) => ({
+        callId: row.call_id,
+        appointmentTime: row.appointment_time,
+        status: row.status ?? "confirmed",
+        smsSent: Boolean(row.sms_sent),
+        phoneNumber: row.phone_number ?? "Unknown",
+        callerName: row.caller_name ?? "Unknown"
       })),
       dateRange,
       configured: true

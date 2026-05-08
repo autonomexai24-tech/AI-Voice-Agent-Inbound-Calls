@@ -119,6 +119,7 @@ export default async function CrmDetailPage({ params }: CrmDetailPageProps) {
                 <p className="mt-2 text-sm text-neutral-500">
                   {call.smsSent === null ? "No SMS" : `SMS ${call.smsSent ? "sent" : "pending"}`}
                 </p>
+                <p className="mt-1 text-sm text-neutral-500">{formatDateTime(call.appointmentTime)}</p>
               </article>
               <article className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
                 <p className="text-xs font-semibold uppercase text-neutral-500">Language</p>

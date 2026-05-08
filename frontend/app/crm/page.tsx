@@ -8,6 +8,9 @@ type CrmPageProps = {
     q?: string;
     from?: string;
     to?: string;
+    booking?: string;
+    language?: string;
+    repeat?: string;
     page?: string;
   }>;
 };
@@ -50,7 +53,7 @@ function statusClass(status: string) {
 
 function buildPageHref(params: Awaited<CrmPageProps["searchParams"]>, page: number) {
   const nextParams = new URLSearchParams();
-  for (const key of ["q", "from", "to"] as const) {
+  for (const key of ["q", "from", "to", "booking", "language", "repeat"] as const) {
     const value = params?.[key];
     if (value) {
       nextParams.set(key, value);
@@ -86,7 +89,7 @@ export default async function CrmPage({ searchParams }: CrmPageProps) {
           </div>
         </div>
 
-        <form className="mt-6 grid gap-3 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm md:grid-cols-[1.6fr_1fr_1fr_auto]">
+        <form className="mt-6 grid gap-3 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm xl:grid-cols-[1.4fr_1fr_1fr_1fr_1fr_1fr_auto]">
           <label className="grid gap-1">
             <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Phone or caller name</span>
             <input
@@ -114,9 +117,47 @@ export default async function CrmPage({ searchParams }: CrmPageProps) {
               className="h-10 rounded-md border border-neutral-300 px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
             />
           </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Booking</span>
+            <select
+              name="booking"
+              defaultValue={params?.booking ?? ""}
+              className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
+            >
+              <option value="">All outcomes</option>
+              <option value="confirmed">Booked</option>
+              <option value="pending">Booking issue</option>
+              <option value="none">No booking</option>
+            </select>
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Language</span>
+            <select
+              name="language"
+              defaultValue={params?.language ?? ""}
+              className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
+            >
+              <option value="">All languages</option>
+              <option value="en-IN">English</option>
+              <option value="hi-IN">Hindi</option>
+              <option value="kn-IN">Kannada</option>
+              <option value="mixed">Mixed</option>
+            </select>
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Caller type</span>
+            <select
+              name="repeat"
+              defaultValue={params?.repeat ?? ""}
+              className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
+            >
+              <option value="">All callers</option>
+              <option value="true">Repeat only</option>
+            </select>
+          </label>
           <div className="flex items-end">
             <button type="submit" className="h-10 w-full rounded-md bg-neutral-950 px-4 text-sm font-semibold text-white">
-              Search
+              Filter
             </button>
           </div>
         </form>

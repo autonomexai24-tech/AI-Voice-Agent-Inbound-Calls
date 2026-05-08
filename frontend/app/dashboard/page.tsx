@@ -26,6 +26,17 @@ function formatHour(hour: number) {
   return new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: true }).format(date);
 }
 
+function formatAppointment(value: string | null) {
+  if (!value) {
+    return "Not set";
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
+}
+
 function MetricCard({
   label,
   value,
@@ -218,6 +229,61 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </div>
           </section>
         </div>
+
+        <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-neutral-500">Booked appointments</p>
+              <h2 className="mt-1 text-xl font-semibold text-neutral-950">Latest confirmed bookings</h2>
+            </div>
+            <Link
+              href="/calendar"
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-800 hover:border-neutral-950"
+            >
+              Open calendar
+            </Link>
+          </div>
+          <div className="mt-5 grid gap-3">
+            {metrics.recentBookings.map((booking) => (
+              <div
+                key={booking.callId}
+                className="grid gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+              >
+                <div>
+                  <p className="font-semibold text-neutral-950">{booking.callerName}</p>
+                  <p className="mt-1 text-sm text-neutral-500">{booking.phoneNumber}</p>
+                </div>
+                <div className="text-sm text-neutral-700 sm:text-right">
+                  <p className="font-semibold text-neutral-950">{formatAppointment(booking.appointmentTime)}</p>
+                  <p className="mt-1 text-xs text-neutral-500">Cal.com confirmed</p>
+                </div>
+                <div className="flex flex-wrap gap-2 sm:justify-end">
+                  <span
+                    className={[
+                      "rounded-md border px-2 py-1 text-xs font-semibold",
+                      booking.smsSent
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-amber-200 bg-amber-50 text-amber-800"
+                    ].join(" ")}
+                  >
+                    SMS {booking.smsSent ? "sent" : "pending"}
+                  </span>
+                  <Link
+                    href={`/crm/${booking.callId}`}
+                    className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs font-semibold text-neutral-800 hover:border-neutral-950"
+                  >
+                    Transcript
+                  </Link>
+                </div>
+              </div>
+            ))}
+            {metrics.recentBookings.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-neutral-300 px-4 py-8 text-center text-sm text-neutral-500">
+                No confirmed bookings for this range.
+              </p>
+            ) : null}
+          </div>
+        </section>
       </div>
     </section>
   );

@@ -133,6 +133,12 @@ create index if not exists idx_call_logs_status
 create index if not exists idx_call_logs_language_code
   on call_logs(language_code);
 
+create index if not exists idx_call_logs_mixed_language_enabled
+  on call_logs(mixed_language_enabled);
+
+create index if not exists idx_call_logs_phone_start_time
+  on call_logs(phone_number, start_time desc);
+
 create index if not exists idx_transcripts_call_id_timestamp
   on transcripts(call_id, timestamp);
 
@@ -141,6 +147,9 @@ create index if not exists idx_bookings_appointment_time
 
 create index if not exists idx_bookings_status
   on bookings(status);
+
+create index if not exists idx_bookings_status_call_id
+  on bookings(status, call_id);
 
 create index if not exists idx_notification_events_call_id_created_at
   on notification_events(call_id, created_at desc);
