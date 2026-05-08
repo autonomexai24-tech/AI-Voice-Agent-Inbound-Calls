@@ -1,5 +1,18 @@
 export const DASHBOARD_AUTH_COOKIE = "inbound_dashboard_session";
 
+const DEFAULT_SESSION_MAX_AGE_SECONDS = 60 * 60 * 12; // 12 hours
+
+export function getSessionMaxAge(): number {
+  const envValue = process.env.DASHBOARD_SESSION_MAX_AGE;
+  if (envValue) {
+    const parsed = parseInt(envValue, 10);
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return DEFAULT_SESSION_MAX_AGE_SECONDS;
+}
+
 const SESSION_MESSAGE = "inbound-dashboard-session-v1";
 
 function encodeText(value: string) {

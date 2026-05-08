@@ -1,14 +1,20 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Navigation } from "./navigation";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
 
   if (pathname === "/login") {
     return <main>{children}</main>;
+  }
+
+  async function handleLogout() {
+    await fetch("/api/logout", { method: "POST" });
+    router.push("/login");
   }
 
   return (
@@ -27,8 +33,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
           <Navigation />
-          <div className="mt-auto hidden rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-xs leading-5 text-neutral-500 lg:block">
-            Production console for calls, bookings, transcripts, language settings, and runtime health.
+          <div className="mt-auto hidden space-y-3 lg:block">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-left text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
+            >
+              Sign out
+            </button>
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-xs leading-5 text-neutral-500">
+              Production console for calls, bookings, transcripts, language settings, and runtime health.
+            </div>
           </div>
         </div>
       </aside>

@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { DASHBOARD_AUTH_COOKIE, createDashboardSessionToken, verifyDashboardPassword } from "../../lib/dashboard-auth";
+import { DASHBOARD_AUTH_COOKIE, createDashboardSessionToken, getSessionMaxAge, verifyDashboardPassword } from "../../lib/dashboard-auth";
 
 export type LoginActionState = {
   status: "idle" | "error";
@@ -54,7 +54,7 @@ export async function loginAction(_previousState: LoginActionState, formData: Fo
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 12
+    maxAge: getSessionMaxAge()
   });
 
   redirect(getSafeRedirect(formData.get("next")));
