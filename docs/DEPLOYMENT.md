@@ -287,7 +287,7 @@ Production startup is fail-fast. If PostgreSQL or schema initialization is unava
 ### `/api/health` endpoint
 
 ```
-GET /api/health → 200 if app, DB, and dashboard auth env are ready; 503 otherwise
+GET /api/health → 200 if app, DB, required schema, and critical runtime env groups are ready; 503 otherwise
 ```
 
 Docker defines a lightweight healthcheck against this endpoint. Easypanel can also use it for container health checks. If the health check fails repeatedly, Easypanel restarts the container.
@@ -299,6 +299,16 @@ Response:
     "checks": {
         "app": "ok",
         "database": "ok",
+        "schema": "ok",
+        "databaseUrl": "ok",
+        "openaiApiKey": "ok",
+        "livekitUrl": "ok",
+        "livekitApiKey": "ok",
+        "livekitApiSecret": "ok",
+        "sarvamApiKey": "ok",
+        "calcomApiKey": "ok",
+        "calcomEventTypeId": "ok",
+        "fast2smsApiKey": "ok",
         "dashboardPassword": "ok"
     },
     "timestamp": "2026-05-08T12:00:00Z",
@@ -356,7 +366,7 @@ Every architectural choice is a cost decision:
 | No vector DB vs. pgvector/Pinecone | ~₹2,000–5,000 |
 | No multi-agent vs. LangChain | ₹0 (complexity cost, not direct) |
 | Concise prompts (200 tokens vs. 2000) | ~₹500–1,500 (LLM token costs) |
-| Short replies (160 tokens max) | ~₹300–800 (LLM output tokens) |
+| Short replies (120 tokens max) | ~₹300–800 (LLM output tokens) |
 | Raw SQL vs. ORM | ₹0 (no runtime overhead) |
 | Single VPS vs. managed cloud | ~₹5,000–15,000 |
 

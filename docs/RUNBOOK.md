@@ -67,6 +67,16 @@ Expected health result:
   "checks": {
     "app": "ok",
     "database": "ok",
+    "schema": "ok",
+    "databaseUrl": "ok",
+    "openaiApiKey": "ok",
+    "livekitUrl": "ok",
+    "livekitApiKey": "ok",
+    "livekitApiSecret": "ok",
+    "sarvamApiKey": "ok",
+    "calcomApiKey": "ok",
+    "calcomEventTypeId": "ok",
+    "fast2smsApiKey": "ok",
     "dashboardPassword": "ok"
   }
 }
@@ -85,6 +95,8 @@ Use this table during launch. Record pass/fail and notes.
 | Supervisor | Voice worker starts |  |  |
 | Supervisor | Dashboard starts |  |  |
 | Health | `/api/health` returns `200` |  |  |
+| Health | `/api/health` shows every required env group as `ok` |  |  |
+| Health | `/api/health` shows required PostgreSQL schema as `ok` |  |  |
 | Auth | Dashboard login works with production password |  |  |
 | Config | Agent config saves and persists after refresh |  |  |
 | English | English-only inbound call works |  |  |
@@ -99,7 +111,9 @@ Use this table during launch. Record pass/fail and notes.
 | Transcript | Full transcript is saved |  |  |
 | CRM | Latest call appears in CRM |  |  |
 | CRM | Transcript detail page is readable |  |  |
+| CRM | Booking, language, repeat-caller, phone/name, and date filters work |  |  |
 | Dashboard | Metrics match database records |  |  |
+| Dashboard | Latest confirmed bookings section matches PostgreSQL |  |  |
 | Analytics | Language usage counts are plausible |  |  |
 | Restart | Container restart recovers cleanly |  |  |
 | Shutdown | Active call finalization survives graceful restart |  |  |
@@ -274,9 +288,11 @@ If the container fails to start:
 If `/api/health` returns `503`:
 
 1. Read the `checks` object.
-2. If database failed, verify `DATABASE_URL` and PostgreSQL health.
-3. If dashboard password is missing, set `DASHBOARD_PASSWORD`.
-4. Redeploy or restart after fixing env.
+2. If any env group is `missing`, set the corresponding Easypanel environment variable.
+3. If `calcomEventTypeId` is `failed`, verify the value is numeric.
+4. If `database` failed, verify `DATABASE_URL` and PostgreSQL health.
+5. If `schema` failed, run database initialization or redeploy so `init_db.py` can apply `schema.sql`.
+6. Redeploy or restart after fixing env or database state.
 
 If inbound calls fail:
 
