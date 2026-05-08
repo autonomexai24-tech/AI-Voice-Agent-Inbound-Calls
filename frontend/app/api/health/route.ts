@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { readFile } from "node:fs/promises";
 import { queryPostgres } from "../../../lib/postgres-server";
 
@@ -87,8 +88,28 @@ async function readAgentRuntimeStatus() {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const startedAt = Date.now();
+  const scope = request.nextUrl.searchParams.get("scope") || "readiness";
+  if (scope === "liveness") {
+    return NextResponse.json(
+      {
+        status: "alive",
+        checks: {
+          app: "ok"
+        },
+        timestamp: new Date().toISOString(),
+        durationMs: Date.now() - startedAt
+      },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store"
+        }
+      }
+    );
+  }
+
   const checks: Record<string, HealthCheckStatus> = {
     app: "ok",
     database: "ok",

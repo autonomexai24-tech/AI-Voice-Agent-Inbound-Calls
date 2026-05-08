@@ -13,7 +13,8 @@ Do not send production traffic to the DID until every item below is marked pass.
 |---|---|---|
 | Container image builds successfully |  |  |
 | Easypanel service starts one container |  |  |
-| `/api/health` returns HTTP 200 |  |  |
+| `/api/health?scope=liveness` returns HTTP 200 |  |  |
+| `/api/health` readiness returns HTTP 200 |  |  |
 | Dashboard redirects unauthenticated users to `/login` |  |  |
 | Dashboard login works with `DASHBOARD_PASSWORD` |  |  |
 | Agent Config save works |  |  |
@@ -66,9 +67,10 @@ If the database password contains `@`, percent-encode it as `%40` in `DATABASE_U
 7. Keep the service as a single container; Supervisor starts the Python worker and Next.js dashboard.
 8. Deploy the service.
 9. Watch logs until `Initialized database schema` appears and Supervisor starts both programs.
-10. Open `https://<domain>/api/health` and confirm it returns `status: "healthy"`.
+10. Open `https://<domain>/api/health?scope=liveness` and confirm it returns `status: "alive"`.
+11. Open `https://<domain>/api/health` and confirm strict readiness returns `status: "healthy"`.
 
-The Docker healthcheck already calls `http://127.0.0.1:3000/api/health`.
+The Docker healthcheck calls `http://127.0.0.1:3000/api/health?scope=liveness` so Easypanel can promote a new frontend container when the web process is alive. Use `/api/health` without query parameters for strict backend readiness; it checks env vars, PostgreSQL, schema, and agent runtime state.
 
 ---
 
@@ -98,7 +100,7 @@ Expected pass checks:
 |---|---|
 | `environment` | Required launch env vars are present and structurally valid |
 | `database_schema` | PostgreSQL has all required tables, columns, and default `agent_config` |
-| `health_endpoint` | Public health endpoint reports healthy runtime |
+| `health_endpoint` | Public strict readiness endpoint reports healthy runtime |
 | `login_page` | Dashboard login page is reachable |
 | `dashboard_auth` | Dashboard is not public without authentication |
 
@@ -165,6 +167,7 @@ Check these during the first production day, then daily.
 | Signal | Where | Healthy value |
 |---|---|---|
 | Container health | Easypanel | Healthy |
+| `/api/health?scope=liveness` | Docker/Easypanel healthcheck | HTTP 200, `status: "alive"` |
 | `/api/health` | Browser or curl | HTTP 200, `status: "healthy"` |
 | Supervisor restarts | Easypanel logs | No restart loop |
 | Agent startup | Logs | `startup_validation_passed` |

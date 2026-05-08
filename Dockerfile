@@ -3,13 +3,12 @@ FROM node:20-slim AS frontend-builder
 WORKDIR /app/frontend
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
 
 COPY frontend/package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+RUN if [ -f package-lock.json ]; then npm ci --include=dev; else npm install --include=dev; fi
 
 COPY frontend/ ./
-RUN npm run build && test -f .next/standalone/server.js
+RUN NODE_ENV=production npm run build && test -f .next/standalone/server.js
 
 FROM python:3.11-slim AS python-builder
 
@@ -57,6 +56,6 @@ EXPOSE 3000
 STOPSIGNAL SIGTERM
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1
+    CMD curl -fsS 'http://127.0.0.1:3000/api/health?scope=liveness' || exit 1
 
 CMD ["/app/start.sh"]
