@@ -187,7 +187,7 @@ function buildCallRow(
     appointmentTime: booking?.appointment_time ?? null,
     smsSent: typeof booking?.sms_sent === "boolean" ? booking.sms_sent : null,
     languageLabel: languageLabel(call.language_code, call.mixed_language_enabled),
-    repeatCount: toNumber(call.repeat_count),
+    repeatCount: Math.max(1, toNumber(call.repeat_count)),
     recordingUrl: call.recording_url
   };
 }
@@ -255,7 +255,13 @@ export async function getCrmCalls(filters: CrmFilters = {}): Promise<OperationsR
         language_code,
         mixed_language_enabled,
         recording_url,
-        count(*) over (partition by phone_number) as repeat_count
+        (
+          select count(*)
+          from call_logs history
+          where history.phone_number = call_logs.phone_number
+            and history.phone_number is not null
+            and history.phone_number <> 'unknown'
+        ) as repeat_count
       from call_logs
       ${whereClause}
       order by start_time desc nulls last
@@ -336,7 +342,13 @@ export async function getCrmCallDetail(callId: string): Promise<DetailResult<Crm
         language_code,
         mixed_language_enabled,
         recording_url,
-        count(*) over (partition by phone_number) as repeat_count
+        (
+          select count(*)
+          from call_logs history
+          where history.phone_number = call_logs.phone_number
+            and history.phone_number is not null
+            and history.phone_number <> 'unknown'
+        ) as repeat_count
       from call_logs
       where id = $1
       limit 1

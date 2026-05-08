@@ -1,8 +1,9 @@
 "use client";
 
+import { useMemo, type ReactNode } from "react";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
-import type { AgentConfig } from "../../lib/agent-config-data";
+import type { AgentConfig, LanguageCode } from "../../lib/agent-config-data";
 import { type AgentConfigActionState, saveAgentConfig } from "./actions";
 
 const initialState: AgentConfigActionState = {
@@ -10,11 +11,11 @@ const initialState: AgentConfigActionState = {
   message: ""
 };
 
-const languageOptions = [
-  { label: "English", value: "en-IN" },
-  { label: "Hindi", value: "hi-IN" },
-  { label: "Kannada", value: "kn-IN" }
-] as const;
+const languageOptions: Array<{ label: string; value: LanguageCode; voice: string; stt: string }> = [
+  { label: "English", value: "en-IN", voice: "Amelia", stt: "English language hint" },
+  { label: "Hindi", value: "hi-IN", voice: "Kavya", stt: "Hindi language hint" },
+  { label: "Kannada", value: "kn-IN", voice: "Kavitha", stt: "Kannada language hint" }
+];
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -23,25 +24,58 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="rounded-md bg-neutral-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-400"
+      className="inline-flex h-10 items-center justify-center rounded-md bg-neutral-950 px-5 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-400"
     >
-      {pending ? "Saving..." : "Save Configuration"}
+      {pending ? "Saving..." : "Save runtime settings"}
     </button>
+  );
+}
+
+function FieldLabel({ label, detail }: { label: string; detail?: string }) {
+  return (
+    <span className="grid gap-1">
+      <span className="text-sm font-semibold text-neutral-900">{label}</span>
+      {detail ? <span className="text-xs leading-5 text-neutral-500">{detail}</span> : null}
+    </span>
+  );
+}
+
+function Section({
+  eyebrow,
+  title,
+  children
+}: {
+  eyebrow: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="mb-5 border-b border-neutral-100 pb-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{eyebrow}</p>
+        <h2 className="mt-1 text-lg font-semibold text-neutral-950">{title}</h2>
+      </div>
+      <div className="grid gap-5">{children}</div>
+    </section>
   );
 }
 
 export function AgentConfigForm({ config }: { config: AgentConfig }) {
   const [state, formAction] = useActionState(saveAgentConfig, initialState);
+  const selectedLanguage = useMemo(
+    () => languageOptions.find((option) => option.value === config.languageCode) ?? languageOptions[0],
+    [config.languageCode]
+  );
 
   return (
-    <form action={formAction} className="mt-6 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+    <form action={formAction} className="mt-6 grid gap-5">
       <input type="hidden" name="id" value={config.id ?? ""} />
 
       {state.status !== "idle" ? (
         <div
           role="status"
           className={[
-            "mb-5 rounded-md border px-4 py-3 text-sm",
+            "rounded-lg border px-4 py-3 text-sm",
             state.status === "success"
               ? "border-emerald-200 bg-emerald-50 text-emerald-800"
               : "border-rose-200 bg-rose-50 text-rose-800"
@@ -51,81 +85,186 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
         </div>
       ) : null}
 
-      <div className="grid gap-5">
-        <label className="grid gap-2">
-          <span className="text-sm font-medium text-neutral-700">Initial Greeting</span>
-          <textarea
-            name="initialGreeting"
-            defaultValue={config.initialGreeting}
-            rows={4}
-            required
-            className="min-h-28 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950 outline-none transition-colors placeholder:text-neutral-400 focus:border-neutral-950"
-          />
-        </label>
+      <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
+        <div className="grid gap-5">
+          <Section eyebrow="Business" title="Reception desk profile">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2">
+                <FieldLabel label="Business name" detail="Spoken in the prompt context." />
+                <input
+                  name="businessName"
+                  defaultValue={config.businessName}
+                  required
+                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
+                />
+              </label>
+              <label className="grid gap-2">
+                <FieldLabel label="Callback phone" detail="Used as operator context when callers ask." />
+                <input
+                  name="businessPhone"
+                  defaultValue={config.businessPhone}
+                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
+                />
+              </label>
+            </div>
+            <label className="grid gap-2 md:max-w-sm">
+              <FieldLabel label="Business timezone" detail="Booking and dashboard display context." />
+              <input
+                name="businessTimezone"
+                defaultValue={config.businessTimezone}
+                required
+                className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
+              />
+            </label>
+          </Section>
 
-        <label className="grid gap-2">
-          <span className="text-sm font-medium text-neutral-700">System Prompt</span>
-          <textarea
-            name="systemPrompt"
-            defaultValue={config.systemPrompt}
-            rows={10}
-            required
-            className="min-h-56 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm leading-6 text-neutral-950 outline-none transition-colors placeholder:text-neutral-400 focus:border-neutral-950"
-          />
-        </label>
+          <Section eyebrow="Multilingual" title="Language and voice behavior">
+            <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+              <label className="grid gap-2">
+                <FieldLabel label="Primary language" detail="Locks TTS voice and fixed-language STT hint." />
+                <select
+                  name="languageCode"
+                  defaultValue={config.languageCode}
+                  required
+                  className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
+                >
+                  {languageOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+                <p className="text-sm font-semibold text-neutral-950">Current voice route</p>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs uppercase text-neutral-500">TTS voice</p>
+                    <p className="mt-1 font-medium text-neutral-900">{selectedLanguage.voice}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase text-neutral-500">STT mode</p>
+                    <p className="mt-1 font-medium text-neutral-900">
+                      {config.mixedLanguageEnabled ? "Auto-detect" : selectedLanguage.stt}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <label className="flex items-start gap-3 rounded-lg border border-neutral-200 bg-white px-4 py-3">
+              <input
+                name="mixedLanguageEnabled"
+                type="checkbox"
+                defaultChecked={config.mixedLanguageEnabled}
+                className="mt-1 h-4 w-4 rounded border-neutral-300 text-neutral-950"
+              />
+              <span className="grid gap-1">
+                <span className="text-sm font-semibold text-neutral-900">Mixed-language mode</span>
+                <span className="text-xs leading-5 text-neutral-500">
+                  STT uses auto-detection for English, Hindi, and Kannada while the assistant keeps one primary
+                  voice for the call.
+                </span>
+              </span>
+            </label>
+          </Section>
 
-        <label className="grid gap-2 sm:max-w-xs">
-          <span className="text-sm font-medium text-neutral-700">Primary Language</span>
-          <select
-            name="languageCode"
-            defaultValue={config.languageCode}
-            required
-            className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950 outline-none transition-colors focus:border-neutral-950"
-          >
-            {languageOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <Section eyebrow="Conversation" title="Prompt and greeting">
+            <label className="grid gap-2">
+              <FieldLabel label="Initial greeting" detail="The first line callers hear." />
+              <textarea
+                name="initialGreeting"
+                defaultValue={config.initialGreeting}
+                rows={3}
+                required
+                className="min-h-24 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950 outline-none focus:border-neutral-950"
+              />
+            </label>
 
-        <label className="flex items-start gap-3 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-3 sm:max-w-xl">
-          <input
-            name="mixedLanguageEnabled"
-            type="checkbox"
-            defaultChecked={config.mixedLanguageEnabled}
-            className="mt-1 h-4 w-4 rounded border-neutral-300 text-neutral-950"
-          />
-          <span className="grid gap-1">
-            <span className="text-sm font-medium text-neutral-700">Mixed Language</span>
-            <span className="text-xs leading-5 text-neutral-500">
-              Auto-detect caller speech while keeping the selected primary language for the agent voice.
-            </span>
-          </span>
-        </label>
+            <label className="grid gap-2">
+              <FieldLabel label="System prompt" detail="Business behavior, tone, policies, and receptionist rules." />
+              <textarea
+                name="systemPrompt"
+                defaultValue={config.systemPrompt}
+                rows={9}
+                required
+                className="min-h-52 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm leading-6 text-neutral-950 outline-none focus:border-neutral-950"
+              />
+            </label>
+          </Section>
 
-        <label className="grid gap-2 sm:max-w-xs">
-          <span className="text-sm font-medium text-neutral-700">VAD Threshold</span>
-          <input
-            name="vadThreshold"
-            type="number"
-            min="0.3"
-            max="0.7"
-            step="0.01"
-            defaultValue={config.vadThreshold}
-            required
-            className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950 outline-none transition-colors focus:border-neutral-950"
-          />
-          <span className="text-xs text-neutral-500">Practical phone-call range: 0.3 to 0.7</span>
-        </label>
+          <Section eyebrow="Booking" title="Appointment handling">
+            <label className="grid gap-2">
+              <FieldLabel
+                label="Booking instructions"
+                detail="Used in the runtime prompt before Cal.com availability and booking calls."
+              />
+              <textarea
+                name="bookingInstructions"
+                defaultValue={config.bookingInstructions}
+                rows={4}
+                required
+                className="min-h-28 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm leading-6 text-neutral-950 outline-none focus:border-neutral-950"
+              />
+            </label>
+            <div className="grid gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
+              <p className="font-semibold text-neutral-950">Runtime booking flow</p>
+              <p>Ask preferred time, confirm details, speak short filler, check Cal.com availability, then book.</p>
+            </div>
+          </Section>
+        </div>
+
+        <aside className="grid h-fit gap-5">
+          <Section eyebrow="Voice" title="Turn taking">
+            <label className="grid gap-2">
+              <FieldLabel label="VAD threshold" detail="Lower reacts faster; higher avoids noise." />
+              <input
+                name="vadThreshold"
+                type="number"
+                min="0.3"
+                max="0.7"
+                step="0.01"
+                defaultValue={config.vadThreshold}
+                required
+                className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
+              />
+            </label>
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
+              Practical phone-call range is 0.3 to 0.7. The backend clamps unsafe values unless emergency override is
+              enabled.
+            </div>
+          </Section>
+
+          <section className="rounded-xl border border-neutral-200 bg-neutral-950 p-5 text-white shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Runtime summary</p>
+            <div className="mt-4 grid gap-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-neutral-400">Primary language</span>
+                <span className="font-medium">{selectedLanguage.label}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-neutral-400">Voice</span>
+                <span className="font-medium">{selectedLanguage.voice}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-neutral-400">Mixed mode</span>
+                <span className="font-medium">{config.mixedLanguageEnabled ? "On" : "Off"}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-neutral-400">VAD</span>
+                <span className="font-medium">{config.vadThreshold}</span>
+              </div>
+            </div>
+          </section>
+        </aside>
       </div>
 
-      <div className="mt-6 flex items-center justify-between gap-4 border-t border-neutral-200 pt-5">
-        <p className="text-sm text-neutral-500">
-          {config.updatedAt ? `Last updated ${new Date(config.updatedAt).toLocaleString("en-IN")}` : "No saved config yet"}
-        </p>
-        <SubmitButton />
+      <div className="sticky bottom-0 z-10 -mx-5 border-t border-neutral-200 bg-white/90 px-5 py-4 backdrop-blur sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-neutral-500">
+            {config.updatedAt ? `Last updated ${new Date(config.updatedAt).toLocaleString("en-IN")}` : "No saved config yet"}
+          </p>
+          <SubmitButton />
+        </div>
       </div>
     </form>
   );

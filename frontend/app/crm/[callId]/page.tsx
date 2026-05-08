@@ -66,15 +66,19 @@ export default async function CrmDetailPage({ params }: CrmDetailPageProps) {
   return (
     <section className="min-h-screen px-5 py-6 sm:px-8 lg:px-10">
       <div className="mx-auto max-w-5xl">
-        <div className="flex flex-col gap-4 border-b border-neutral-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
           <div>
             <Link href="/crm" className="text-sm font-medium text-neutral-500 hover:text-neutral-950">
               Back to CRM
             </Link>
-            <h1 className="mt-2 text-3xl font-semibold tracking-normal text-neutral-950">Call Transcript</h1>
+            <h1 className="mt-3 text-4xl font-semibold tracking-normal text-neutral-950">Call Transcript</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-600">
+              Full turn-by-turn transcript, booking state, caller history, language mode, and recording link for operator
+              review.
+            </p>
           </div>
           {call ? (
-            <div className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-600">
+            <div className="mt-5 inline-flex rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
               {formatDateTime(call.startTime)}
             </div>
           ) : null}
@@ -138,18 +142,39 @@ export default async function CrmDetailPage({ params }: CrmDetailPageProps) {
               ) : null}
             </section>
 
-            <section className="mt-6 rounded-lg border border-neutral-200 bg-white shadow-sm">
-              <div className="border-b border-neutral-200 px-5 py-4">
-                <p className="text-sm font-medium text-neutral-500">Transcript</p>
+            <section className="mt-6 rounded-2xl border border-neutral-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+                <div>
+                  <p className="text-sm font-semibold text-neutral-500">Transcript viewer</p>
+                  <h2 className="mt-1 text-lg font-semibold text-neutral-950">Conversation timeline</h2>
+                </div>
+                <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-600">
+                  {call.transcript.length} turns
+                </span>
               </div>
-              <div className="divide-y divide-neutral-100">
+              <div className="grid gap-4 p-5">
                 {call.transcript.map((turn, index) => (
-                  <div key={`${turn.timestamp}-${index}`} className="grid gap-2 px-5 py-4 sm:grid-cols-[120px_1fr]">
-                    <div>
+                  <div
+                    key={`${turn.timestamp}-${index}`}
+                    className={[
+                      "grid gap-2",
+                      turn.speaker === "assistant" ? "justify-items-end" : "justify-items-start"
+                    ].join(" ")}
+                  >
+                    <div className="max-w-3xl">
                       <p className="text-sm font-semibold text-neutral-950">{formatSpeaker(turn.speaker)}</p>
                       <p className="mt-1 text-xs text-neutral-500">{formatDateTime(turn.timestamp)}</p>
+                      <p
+                        className={[
+                          "mt-2 rounded-2xl px-4 py-3 text-sm leading-6",
+                          turn.speaker === "assistant"
+                            ? "bg-neutral-950 text-white"
+                            : "border border-neutral-200 bg-neutral-50 text-neutral-800"
+                        ].join(" ")}
+                      >
+                        {turn.text}
+                      </p>
                     </div>
-                    <p className="text-sm leading-6 text-neutral-700">{turn.text}</p>
                   </div>
                 ))}
                 {call.transcript.length === 0 ? (

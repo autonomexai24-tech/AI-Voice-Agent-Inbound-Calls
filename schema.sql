@@ -43,6 +43,10 @@ create table if not exists notification_events (
 
 create table if not exists agent_config (
   id uuid primary key default gen_random_uuid(),
+  business_name text not null default 'Dental Clinic',
+  business_phone text not null default '',
+  business_timezone text not null default 'Asia/Kolkata',
+  booking_instructions text not null default 'Confirm caller name, phone number, date, and time before booking.',
   initial_greeting text not null,
   system_prompt text not null,
   vad_threshold numeric(4, 3) not null default 0.500,
@@ -77,7 +81,23 @@ alter table agent_config
 alter table agent_config
   add column if not exists mixed_language_enabled boolean not null default false;
 
+alter table agent_config
+  add column if not exists business_name text not null default 'Dental Clinic';
+
+alter table agent_config
+  add column if not exists business_phone text not null default '';
+
+alter table agent_config
+  add column if not exists business_timezone text not null default 'Asia/Kolkata';
+
+alter table agent_config
+  add column if not exists booking_instructions text not null default 'Confirm caller name, phone number, date, and time before booking.';
+
 insert into agent_config (
+  business_name,
+  business_phone,
+  business_timezone,
+  booking_instructions,
   initial_greeting,
   system_prompt,
   vad_threshold,
@@ -85,6 +105,10 @@ insert into agent_config (
   mixed_language_enabled
 )
 select
+  'Dental Clinic',
+  '',
+  'Asia/Kolkata',
+  'Confirm caller name, phone number, date, and time before booking.',
   'Hello, thanks for calling. How can I help you today?',
   'You are a helpful inbound voice agent. Keep responses brief, natural, and focused on helping the caller.',
   0.500,

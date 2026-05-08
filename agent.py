@@ -22,6 +22,10 @@ logging.basicConfig(level=logging.INFO)
 
 
 DEFAULT_AGENT_CONFIG = {
+    "business_name": "Dental Clinic",
+    "business_phone": "",
+    "business_timezone": "Asia/Kolkata",
+    "booking_instructions": "Confirm caller name, phone number, date, and time before booking.",
     "initial_greeting": "Hello, thanks for calling. How can I help you today?",
     "system_prompt": "You are a helpful inbound voice assistant.",
     "vad_threshold": 0.5,
@@ -125,6 +129,10 @@ def validate_startup_environment() -> None:
 
 @dataclass(frozen=True)
 class AgentConfig:
+    business_name: str
+    business_phone: str
+    business_timezone: str
+    booking_instructions: str
     initial_greeting: str
     system_prompt: str
     vad_threshold: float
@@ -147,6 +155,10 @@ class VoicePipelineAgent:
 
     greeting: str
     system_prompt: str
+    business_name: str
+    business_phone: str
+    business_timezone: str
+    booking_instructions: str
     vad_threshold: float
     language_code: str
     mixed_language_enabled: bool
@@ -162,6 +174,10 @@ class VoicePipelineAgent:
         assistant = InboundAssistant(
             instructions=self.system_prompt,
             greeting=self.greeting,
+            business_name=self.business_name,
+            business_phone=self.business_phone,
+            business_timezone=self.business_timezone,
+            booking_instructions=self.booking_instructions,
             language_config=language_config,
         )
         session = AgentSession(
@@ -217,9 +233,20 @@ class InboundAssistant(Agent):
         *,
         instructions: str,
         greeting: str,
+        business_name: str,
+        business_phone: str,
+        business_timezone: str,
+        booking_instructions: str,
         language_config: RuntimeLanguageConfig,
     ) -> None:
         language_policy = _build_language_policy(language_config)
+        business_policy = (
+            "\n\n[BUSINESS SETTINGS]\n"
+            f"Business name: {business_name}.\n"
+            f"Callback phone: {business_phone or 'not provided'}.\n"
+            f"Business timezone: {business_timezone}.\n"
+            f"Booking instructions: {booking_instructions}."
+        )
         response_policy = (
             "\n\n[RESPONSE POLICY]\n"
             "Keep replies short, calm, and receptionist-like. Ask one question at a time. "
@@ -235,7 +262,7 @@ class InboundAssistant(Agent):
             "the caller's current conversation for business context."
         )
         super().__init__(
-            instructions=instructions + language_policy + response_policy + booking_policy,
+            instructions=instructions + business_policy + language_policy + response_policy + booking_policy,
             tools=[book_appointment],
         )
         self._greeting = greeting
@@ -359,6 +386,10 @@ def _find_phone_number(metadata: dict[str, Any], ctx: JobContext) -> str | None:
 def _coerce_agent_config(row: dict[str, Any] | None) -> AgentConfig:
     source = row or DEFAULT_AGENT_CONFIG
     return AgentConfig(
+        business_name=str(source.get("business_name") or DEFAULT_AGENT_CONFIG["business_name"]),
+        business_phone=str(source.get("business_phone") or DEFAULT_AGENT_CONFIG["business_phone"]),
+        business_timezone=str(source.get("business_timezone") or DEFAULT_AGENT_CONFIG["business_timezone"]),
+        booking_instructions=str(source.get("booking_instructions") or DEFAULT_AGENT_CONFIG["booking_instructions"]),
         initial_greeting=str(
             source.get("initial_greeting") or DEFAULT_AGENT_CONFIG["initial_greeting"]
         ),
@@ -379,6 +410,10 @@ def fetch_active_agent_config() -> AgentConfig:
         row = db.fetch_one(
             """
             select
+                business_name,
+                business_phone,
+                business_timezone,
+                booking_instructions,
                 initial_greeting,
                 system_prompt,
                 vad_threshold,
@@ -690,6 +725,10 @@ async def entrypoint(ctx: JobContext) -> None:
     agent = VoicePipelineAgent(
         greeting=config.initial_greeting,
         system_prompt=config.system_prompt,
+        business_name=config.business_name,
+        business_phone=config.business_phone,
+        business_timezone=config.business_timezone,
+        booking_instructions=config.booking_instructions,
         vad_threshold=config.vad_threshold,
         language_code=config.language_code,
         mixed_language_enabled=config.mixed_language_enabled,

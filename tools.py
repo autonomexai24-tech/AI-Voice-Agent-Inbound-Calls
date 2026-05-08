@@ -2,7 +2,7 @@ import logging
 import os
 import asyncio
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 import httpx
@@ -72,6 +72,60 @@ def _booking_payload(name: str, phone: str, date_time: str) -> dict[str, Any]:
     }
 
 
+def _slot_search_window(date_time: str) -> tuple[str, str]:
+    requested = datetime.fromisoformat(date_time.replace("Z", "+00:00"))
+    if requested.tzinfo is None:
+        requested = requested.replace(tzinfo=timezone.utc)
+    requested_utc = requested.astimezone(timezone.utc)
+    return (
+        (requested_utc - timedelta(hours=12)).isoformat().replace("+00:00", "Z"),
+        (requested_utc + timedelta(hours=12)).isoformat().replace("+00:00", "Z"),
+    )
+
+
+def _slot_matches(slot: Any, requested_start: str) -> bool:
+    if isinstance(slot, str):
+        candidate = slot
+    elif isinstance(slot, dict):
+        candidate = str(slot.get("start") or slot.get("slotStart") or "")
+    else:
+        candidate = ""
+
+    if not candidate:
+        return False
+
+    requested = datetime.fromisoformat(requested_start.replace("Z", "+00:00")).astimezone(timezone.utc)
+    available = datetime.fromisoformat(candidate.replace("Z", "+00:00")).astimezone(timezone.utc)
+    return abs((available - requested).total_seconds()) <= 60
+
+
+async def _check_calcom_availability(client: httpx.AsyncClient, api_key: str, appointment_time: str) -> bool:
+    start, end = _slot_search_window(appointment_time)
+    response = await client.get(
+        "https://api.cal.com/v2/slots",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "cal-api-version": "2024-09-04",
+        },
+        params={
+            "eventTypeId": _event_type_id(),
+            "start": start,
+            "end": end,
+            "timeZone": "Asia/Kolkata",
+            "format": "range",
+        },
+    )
+    if response.status_code >= 400:
+        logger.error("[BOOKING] Cal.com availability failed %s: %s", response.status_code, response.text)
+        return False
+
+    data = response.json().get("data", {})
+    if not isinstance(data, dict):
+        return False
+
+    return any(_slot_matches(slot, appointment_time) for slots in data.values() for slot in (slots or []))
+
+
 async def _insert_booking_record(call_id: str, appointment_time: str) -> None:
     await asyncio.to_thread(
         lambda: db.execute(
@@ -135,6 +189,11 @@ async def book_appointment(
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
+            available = await _check_calcom_availability(client, api_key, payload["start"])
+            if not available:
+                logger.info("[BOOKING] Requested slot unavailable call_id=%s start=%s", call_id, payload["start"])
+                return "That time does not appear to be available. Please share another preferred time."
+
             response = await client.post(
                 "https://api.cal.com/v2/bookings",
                 headers={

@@ -45,12 +45,20 @@ function readMixedLanguageEnabled(formData: FormData) {
   return String(formData.get("mixedLanguageEnabled") ?? "").trim() === "on";
 }
 
+function readOptionalText(formData: FormData, field: string) {
+  return String(formData.get(field) ?? "").trim();
+}
+
 export async function saveAgentConfig(
   _previousState: AgentConfigActionState,
   formData: FormData
 ): Promise<AgentConfigActionState> {
   try {
     const id = String(formData.get("id") ?? "").trim();
+    const businessName = readRequiredText(formData, "businessName", "Business name");
+    const businessPhone = readOptionalText(formData, "businessPhone");
+    const businessTimezone = readRequiredText(formData, "businessTimezone", "Business timezone");
+    const bookingInstructions = readRequiredText(formData, "bookingInstructions", "Booking instructions");
     const initialGreeting = readRequiredText(formData, "initialGreeting", "Initial greeting");
     const systemPrompt = readRequiredText(formData, "systemPrompt", "System prompt");
     const vadThreshold = readVadThreshold(formData);
@@ -62,20 +70,40 @@ export async function saveAgentConfig(
       await queryPostgres(
         `
         update agent_config
-        set initial_greeting = $1,
-            system_prompt = $2,
-            vad_threshold = $3,
-            language_code = $4,
-            mixed_language_enabled = $5,
-            updated_at = $6
-        where id = $7
+        set business_name = $1,
+            business_phone = $2,
+            business_timezone = $3,
+            booking_instructions = $4,
+            initial_greeting = $5,
+            system_prompt = $6,
+            vad_threshold = $7,
+            language_code = $8,
+            mixed_language_enabled = $9,
+            updated_at = $10
+        where id = $11
         `,
-        [initialGreeting, systemPrompt, vadThreshold, languageCode, mixedLanguageEnabled, updatedAt, id]
+        [
+          businessName,
+          businessPhone,
+          businessTimezone,
+          bookingInstructions,
+          initialGreeting,
+          systemPrompt,
+          vadThreshold,
+          languageCode,
+          mixedLanguageEnabled,
+          updatedAt,
+          id
+        ]
       );
     } else {
       await queryPostgres(
         `
         insert into agent_config (
+          business_name,
+          business_phone,
+          business_timezone,
+          booking_instructions,
           initial_greeting,
           system_prompt,
           vad_threshold,
@@ -83,13 +111,25 @@ export async function saveAgentConfig(
           mixed_language_enabled,
           updated_at
         )
-        values ($1, $2, $3, $4, $5, $6)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         `,
-        [initialGreeting, systemPrompt, vadThreshold, languageCode, mixedLanguageEnabled, updatedAt]
+        [
+          businessName,
+          businessPhone,
+          businessTimezone,
+          bookingInstructions,
+          initialGreeting,
+          systemPrompt,
+          vadThreshold,
+          languageCode,
+          mixedLanguageEnabled,
+          updatedAt
+        ]
       );
     }
 
     revalidatePath("/agent-config");
+    revalidatePath("/business-settings");
 
     return {
       status: "success",

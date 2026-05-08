@@ -45,17 +45,20 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
   return (
     <section className="min-h-screen px-5 py-6 sm:px-8 lg:px-10">
       <div className="mx-auto max-w-6xl">
-        <div className="flex flex-col gap-4 border-b border-neutral-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
           <div>
-            <p className="text-sm font-medium text-neutral-500">Confirmed bookings</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-normal text-neutral-950">Appointment Calendar</h1>
+            <p className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Booking operations</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-normal text-neutral-950">Appointment Calendar</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-600">
+              Confirmed Cal.com bookings with caller identity, SMS status, and transcript review links.
+            </p>
           </div>
-          <div className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-600">
+          <div className="mt-5 inline-flex rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
             {firstRow}-{lastRow} of {result.totalRows.toLocaleString("en-US")} bookings
           </div>
         </div>
 
-        <form className="mt-6 grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm sm:grid-cols-[1fr_1fr_auto]">
+        <form className="mt-6 grid gap-3 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:grid-cols-[1fr_1fr_auto]">
           <label className="grid gap-1">
             <span className="text-xs font-medium uppercase text-neutral-500">Appointment from</span>
             <input
@@ -87,7 +90,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
           </div>
         ) : null}
 
-        <div className="mt-6 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+        <div className="mt-6 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-neutral-200 text-left text-sm">
               <thead className="bg-neutral-50 text-xs font-semibold uppercase text-neutral-500">
@@ -117,9 +120,12 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
                   const appointment = formatAppointment(row.appointmentTime);
 
                   return (
-                    <tr key={`${row.callId}-${row.appointmentTime}`} className="align-top">
-                      <td className="whitespace-nowrap px-4 py-4 font-medium text-neutral-950">{appointment.date}</td>
-                      <td className="whitespace-nowrap px-4 py-4 text-neutral-600">{appointment.time}</td>
+                    <tr key={`${row.callId}-${row.appointmentTime}`} className="align-top hover:bg-neutral-50">
+                      <td className="whitespace-nowrap px-4 py-4">
+                        <div className="font-semibold text-neutral-950">{appointment.date}</div>
+                        <div className="mt-1 text-xs text-neutral-500">Asia/Kolkata</div>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-4 text-lg font-semibold text-neutral-950">{appointment.time}</td>
                       <td className="whitespace-nowrap px-4 py-4 text-neutral-600">
                         <div className="font-medium text-neutral-950">{row.callerName}</div>
                         <div className="mt-1 text-neutral-500">{row.phoneNumber}</div>
@@ -130,7 +136,16 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-4 text-neutral-600">
-                        {row.smsSent ? "Sent" : "Pending"}
+                        <span
+                          className={[
+                            "rounded-md border px-2 py-1 text-xs font-semibold",
+                            row.smsSent
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : "border-amber-200 bg-amber-50 text-amber-800"
+                          ].join(" ")}
+                        >
+                          {row.smsSent ? "Sent" : "Pending"}
+                        </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-4">
                         <Link

@@ -3,6 +3,10 @@ import { queryPostgres } from "./postgres-server";
 
 export type AgentConfig = {
   id: string | null;
+  businessName: string;
+  businessPhone: string;
+  businessTimezone: string;
+  bookingInstructions: string;
   initialGreeting: string;
   systemPrompt: string;
   vadThreshold: number;
@@ -20,6 +24,10 @@ export type AgentConfigResult = {
 
 type AgentConfigRow = {
   id: string;
+  business_name: string | null;
+  business_phone: string | null;
+  business_timezone: string | null;
+  booking_instructions: string | null;
   initial_greeting: string | null;
   system_prompt: string | null;
   vad_threshold: number | string | null;
@@ -32,6 +40,10 @@ const supportedLanguageCodes = new Set<LanguageCode>(["en-IN", "hi-IN", "kn-IN"]
 
 export const defaultAgentConfig: AgentConfig = {
   id: null,
+  businessName: "Dental Clinic",
+  businessPhone: "",
+  businessTimezone: "Asia/Kolkata",
+  bookingInstructions: "Confirm caller name, phone number, date, and time before booking.",
   initialGreeting: "Hello, thanks for calling. How can I help you today?",
   systemPrompt: "You are a helpful inbound voice agent. Keep responses brief and focused.",
   vadThreshold: 0.5,
@@ -53,6 +65,10 @@ function normalizeConfig(row: AgentConfigRow | null): AgentConfig {
 
   return {
     id: row.id,
+    businessName: row.business_name || defaultAgentConfig.businessName,
+    businessPhone: row.business_phone || defaultAgentConfig.businessPhone,
+    businessTimezone: row.business_timezone || defaultAgentConfig.businessTimezone,
+    bookingInstructions: row.booking_instructions || defaultAgentConfig.bookingInstructions,
     initialGreeting: row.initial_greeting || defaultAgentConfig.initialGreeting,
     systemPrompt: row.system_prompt || defaultAgentConfig.systemPrompt,
     vadThreshold: Number.isFinite(parsedThreshold) ? parsedThreshold : defaultAgentConfig.vadThreshold,
@@ -68,6 +84,10 @@ export async function getActiveAgentConfig(): Promise<AgentConfigResult> {
       `
       select
         id,
+        business_name,
+        business_phone,
+        business_timezone,
+        booking_instructions,
         initial_greeting,
         system_prompt,
         vad_threshold,

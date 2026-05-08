@@ -9,13 +9,34 @@ export default async function AgentConfigPage() {
   return (
     <section className="min-h-screen px-5 py-6 sm:px-8 lg:px-10">
       <div className="mx-auto max-w-6xl">
-        <div className="flex flex-col gap-4 border-b border-neutral-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
           <div>
-            <p className="text-sm font-medium text-neutral-500">Runtime behavior</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-normal text-neutral-950">Agent Configuration</h1>
+            <p className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Runtime control center</p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-normal text-neutral-950">Agent Configuration</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-600">
+              Configure business context, multilingual speech, receptionist tone, booking behavior, and voice turn
+              taking. New inbound calls load these settings at runtime.
+            </p>
           </div>
-          <div className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-600">
-            PostgreSQL runtime config
+          <div className="mt-5 grid gap-3 sm:grid-cols-4">
+            <div className="rounded-lg bg-neutral-50 p-3">
+              <p className="text-xs text-neutral-500">Primary language</p>
+              <p className="mt-1 text-sm font-semibold text-neutral-950">{result.config.languageCode}</p>
+            </div>
+            <div className="rounded-lg bg-neutral-50 p-3">
+              <p className="text-xs text-neutral-500">Mixed mode</p>
+              <p className="mt-1 text-sm font-semibold text-neutral-950">
+                {result.config.mixedLanguageEnabled ? "Enabled" : "Disabled"}
+              </p>
+            </div>
+            <div className="rounded-lg bg-neutral-50 p-3">
+              <p className="text-xs text-neutral-500">Business</p>
+              <p className="mt-1 text-sm font-semibold text-neutral-950">{result.config.businessName}</p>
+            </div>
+            <div className="rounded-lg bg-neutral-50 p-3">
+              <p className="text-xs text-neutral-500">VAD threshold</p>
+              <p className="mt-1 text-sm font-semibold text-neutral-950">{result.config.vadThreshold}</p>
+            </div>
           </div>
         </div>
 
