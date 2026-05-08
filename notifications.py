@@ -1,5 +1,6 @@
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -9,6 +10,13 @@ import httpx
 logger = logging.getLogger("notifications")
 
 FAST2SMS_URL = "https://www.fast2sms.com/dev/bulkV2"
+
+
+@dataclass(frozen=True)
+class SmsSendResult:
+    sent: bool
+    provider_response: str | None = None
+    error_message: str | None = None
 
 
 def _format_appointment_details(appointment_details: dict[str, Any] | str) -> str:
@@ -25,11 +33,19 @@ def _format_appointment_details(appointment_details: dict[str, Any] | str) -> st
     return appointment_time or "your confirmed appointment"
 
 
-async def send_booking_sms(phone_number: str, appointment_details: dict[str, Any] | str) -> bool:
+def _truncate_provider_response(value: Any, limit: int = 2000) -> str:
+    text = str(value)
+    return text if len(text) <= limit else f"{text[:limit]}..."
+
+
+async def send_booking_sms_with_result(
+    phone_number: str,
+    appointment_details: dict[str, Any] | str,
+) -> SmsSendResult:
     api_key = os.environ.get("FAST2SMS_API_KEY", "").strip()
     if not api_key:
         logger.error("[FAST2SMS] FAST2SMS_API_KEY is not configured")
-        return False
+        return SmsSendResult(sent=False, error_message="FAST2SMS_API_KEY is not configured")
 
     details = _format_appointment_details(appointment_details)
     message = f"Your appointment is confirmed for {details}. Thank you."
@@ -52,23 +68,37 @@ async def send_booking_sms(phone_number: str, appointment_details: dict[str, Any
                 json=payload,
             )
     except httpx.TimeoutException:
-        logger.error("[FAST2SMS] Request timed out for phone=%s", phone_number)
-        return False
+        logger.error("[FAST2SMS] Request timed out")
+        return SmsSendResult(sent=False, error_message="Fast2SMS request timed out")
     except Exception as exc:
-        logger.error("[FAST2SMS] Request failed for phone=%s: %s", phone_number, exc)
-        return False
+        logger.error("[FAST2SMS] Request failed: %s", exc)
+        return SmsSendResult(sent=False, error_message=str(exc))
 
     try:
         response_payload = response.json()
     except ValueError:
         response_payload = {"raw": response.text}
 
-    logger.info("[FAST2SMS] Response payload: %s", response_payload)
+    provider_response = _truncate_provider_response(response_payload)
+    logger.info("[FAST2SMS] Response payload: %s", provider_response)
     if response.status_code >= 400:
-        logger.error("[FAST2SMS] HTTP %s for phone=%s", response.status_code, phone_number)
-        return False
+        logger.error("[FAST2SMS] HTTP %s", response.status_code)
+        return SmsSendResult(
+            sent=False,
+            provider_response=provider_response,
+            error_message=f"Fast2SMS HTTP {response.status_code}",
+        )
 
     if isinstance(response_payload, dict) and response_payload.get("return") is False:
-        return False
+        return SmsSendResult(
+            sent=False,
+            provider_response=provider_response,
+            error_message="Fast2SMS returned failure",
+        )
 
-    return True
+    return SmsSendResult(sent=True, provider_response=provider_response)
+
+
+async def send_booking_sms(phone_number: str, appointment_details: dict[str, Any] | str) -> bool:
+    result = await send_booking_sms_with_result(phone_number, appointment_details)
+    return result.sent

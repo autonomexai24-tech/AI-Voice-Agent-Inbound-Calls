@@ -3,8 +3,8 @@
 ## Mission
 
 This repository is for a professional inbound AI voice platform that answers calls, conducts natural voice conversations, books appointments, sends post-booking SMS confirmations, and exposes a clean operator dashboard.
-
-Future coding sessions must follow the constraints in this file unless the project owner explicitly changes them.
+Future coding sessions must follow the con
+straints in this file unless the project owner explicitly changes them.
 
 ## Stack Rules
 

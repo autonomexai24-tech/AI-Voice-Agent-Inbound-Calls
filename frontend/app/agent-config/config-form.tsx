@@ -10,6 +10,12 @@ const initialState: AgentConfigActionState = {
   message: ""
 };
 
+const languageOptions = [
+  { label: "English", value: "en-IN" },
+  { label: "Hindi", value: "hi-IN" },
+  { label: "Kannada", value: "kn-IN" }
+] as const;
+
 function SubmitButton() {
   const { pending } = useFormStatus();
 
@@ -69,18 +75,49 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
         </label>
 
         <label className="grid gap-2 sm:max-w-xs">
+          <span className="text-sm font-medium text-neutral-700">Primary Language</span>
+          <select
+            name="languageCode"
+            defaultValue={config.languageCode}
+            required
+            className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950 outline-none transition-colors focus:border-neutral-950"
+          >
+            {languageOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex items-start gap-3 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-3 sm:max-w-xl">
+          <input
+            name="mixedLanguageEnabled"
+            type="checkbox"
+            defaultChecked={config.mixedLanguageEnabled}
+            className="mt-1 h-4 w-4 rounded border-neutral-300 text-neutral-950"
+          />
+          <span className="grid gap-1">
+            <span className="text-sm font-medium text-neutral-700">Mixed Language</span>
+            <span className="text-xs leading-5 text-neutral-500">
+              Auto-detect caller speech while keeping the selected primary language for the agent voice.
+            </span>
+          </span>
+        </label>
+
+        <label className="grid gap-2 sm:max-w-xs">
           <span className="text-sm font-medium text-neutral-700">VAD Threshold</span>
           <input
             name="vadThreshold"
             type="number"
-            min="0"
-            max="1"
+            min="0.3"
+            max="0.7"
             step="0.01"
             defaultValue={config.vadThreshold}
             required
             className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950 outline-none transition-colors focus:border-neutral-950"
           />
-          <span className="text-xs text-neutral-500">Valid range: 0.0 to 1.0</span>
+          <span className="text-xs text-neutral-500">Practical phone-call range: 0.3 to 0.7</span>
         </label>
       </div>
 

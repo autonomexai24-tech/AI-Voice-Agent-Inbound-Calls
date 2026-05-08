@@ -88,11 +88,32 @@ async def _insert_booking_record(call_id: str, appointment_time: str) -> None:
     )
 
 
+async def _persist_caller_name(call_id: str, name: str) -> None:
+    clean_name = name.strip()
+    if not clean_name:
+        return
+
+    try:
+        await asyncio.to_thread(
+            lambda: db.execute(
+                """
+                update call_logs
+                set caller_name = %s
+                where id = %s
+                """,
+                (clean_name, call_id),
+            )
+        )
+    except Exception as exc:
+        logger.error("[BOOKING] Failed to persist caller_name for call_id=%s: %s", call_id, exc)
+
+
 @llm.function_tool(
     description=(
         "Create a Cal.com appointment only after the caller has verbally confirmed "
         "the exact name, phone number, and appointment date/time. Never call this "
-        "tool while proposing options or before explicit confirmation."
+        "tool while proposing options or before explicit confirmation. Immediately "
+        'before calling this tool, tell the caller: "One moment while I book that for you."'
     )
 )
 async def book_appointment(
@@ -129,12 +150,10 @@ async def book_appointment(
 
         appointment_time = payload["start"]
         await _insert_booking_record(call_id=call_id, appointment_time=appointment_time)
+        await _persist_caller_name(call_id=call_id, name=name)
         booking_id = response.json().get("data", {}).get("uid", "confirmed")
         logger.info("[BOOKING] Confirmed booking call_id=%s booking_id=%s", call_id, booking_id)
-        return (
-            f"Booking confirmed for {name} at {appointment_time}. "
-            "Please tell the caller their appointment is confirmed."
-        )
+        return f"Your appointment is confirmed for {appointment_time}. Thank you, {name}."
     except httpx.TimeoutException:
         logger.error("[BOOKING] Cal.com request timed out")
         return "I could not complete the booking because the calendar service timed out."

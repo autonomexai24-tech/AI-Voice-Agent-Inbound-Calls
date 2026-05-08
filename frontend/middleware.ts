@@ -4,6 +4,7 @@ import { DASHBOARD_AUTH_COOKIE, verifyDashboardSessionToken } from "./lib/dashbo
 function isPublicRoute(pathname: string) {
   return (
     pathname === "/login" ||
+    pathname === "/api/health" ||
     pathname.startsWith("/api/webhook") ||
     pathname.startsWith("/api/webhooks")
   );

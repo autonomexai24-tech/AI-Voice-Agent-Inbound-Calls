@@ -15,7 +15,7 @@ export default async function AgentConfigPage() {
             <h1 className="mt-2 text-3xl font-semibold tracking-normal text-neutral-950">Agent Configuration</h1>
           </div>
           <div className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-600">
-            Supabase service role update
+            PostgreSQL runtime config
           </div>
         </div>
 
