@@ -35,6 +35,7 @@ Set these values in Easypanel environment variables before deployment:
 | `CALCOM_EVENT_TYPE_ID` | Yes | Booking event type |
 | `FAST2SMS_API_KEY` | Yes | Booking confirmation SMS |
 | `DASHBOARD_PASSWORD` | Yes | Dashboard access |
+| `DASHBOARD_SESSION_MAX_AGE` | No | Session duration in seconds (default: 43200 = 12 hours) |
 
 Rules:
 
@@ -210,6 +211,7 @@ Verify these operator workflows:
 14. Transcript detail page opens.
 15. Full transcript is readable.
 16. Recording links open when present.
+17. Sign out button logs out and redirects to login.
 
 ---
 
@@ -361,7 +363,20 @@ For normal operation, check daily:
 
 ---
 
-## 14. Go / No-Go Criteria
+## 14. Known Issues and Workarounds
+
+| Issue | Impact | Workaround |
+|-------|--------|------------|
+| Sarvam TTS cold-start latency on first call after container start | First caller may hear a ~1s extra pause before the greeting | Place one warm-up call after each deploy or restart |
+| Cal.com API may return 429 under burst booking traffic | Booking fails for that call; caller hears fallback message | The agent retries once naturally on next caller turn; no manual action needed |
+| Fast2SMS delivery receipts are not available via API | `notification_events` records send/fail but not final delivery | Monitor operator feedback for missed SMS; check Fast2SMS dashboard manually |
+| Mixed-language STT uses `language="unknown"` which relies on Sarvam auto-detect | Accuracy may be lower for short utterances in non-primary language | If accuracy is poor, disable mixed-language and set a single primary language |
+| Session token is HMAC-based, not expiring on password change | If `DASHBOARD_PASSWORD` is rotated, old sessions remain valid until cookie expires | Restart the container after password rotation to invalidate all sessions |
+| Transcript persistence is fire-and-forget | A database hiccup during a call may lose individual transcript turns | `log_transcript_turn` errors are logged; check voice worker stderr for `[DB] Failed to log transcript turn` |
+
+---
+
+## 15. Go / No-Go Criteria
 
 Go only if:
 
