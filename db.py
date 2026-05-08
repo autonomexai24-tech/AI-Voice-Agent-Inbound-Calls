@@ -22,7 +22,11 @@ def _required_database_url() -> str:
 
 @contextmanager
 def get_connection() -> Iterator[Any]:
-    connection = psycopg2.connect(_required_database_url())
+    connection = psycopg2.connect(
+        _required_database_url(),
+        connect_timeout=5,
+        application_name="inbound_voice_agent",
+    )
     try:
         yield connection
         connection.commit()

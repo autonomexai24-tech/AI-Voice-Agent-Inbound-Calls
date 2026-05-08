@@ -26,6 +26,10 @@ def _validate_database_url(database_url: str) -> None:
         )
 
 
+def _redact_database_url(message: str, database_url: str) -> str:
+    return message.replace(database_url, "***") if database_url else message
+
+
 def main() -> None:
     database_url = os.environ.get(DATABASE_URL_ENV, "").strip()
     if not database_url:
@@ -39,14 +43,18 @@ def main() -> None:
     last_error: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            with psycopg2.connect(database_url) as connection:
+            with psycopg2.connect(
+                database_url,
+                connect_timeout=5,
+                application_name="inbound_voice_init",
+            ) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(schema_sql)
                 connection.commit()
             break
         except psycopg2.OperationalError as exc:
             last_error = exc
-            print(f"Database not ready yet ({attempt}/{MAX_ATTEMPTS}): {exc}")
+            print(f"Database not ready yet ({attempt}/{MAX_ATTEMPTS}): {_redact_database_url(str(exc), database_url)}")
             time.sleep(RETRY_DELAY_SECONDS)
     else:
         raise RuntimeError("Database did not become ready in time.") from last_error
