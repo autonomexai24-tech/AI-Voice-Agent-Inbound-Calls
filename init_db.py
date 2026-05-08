@@ -48,9 +48,11 @@ def main() -> None:
                 connect_timeout=5,
                 application_name="inbound_voice_init",
             ) as connection:
+                print("[init_db.py] DB connected.")
                 with connection.cursor() as cursor:
                     cursor.execute(schema_sql)
                 connection.commit()
+                print("[init_db.py] Schema initialized.")
             break
         except psycopg2.OperationalError as exc:
             last_error = exc

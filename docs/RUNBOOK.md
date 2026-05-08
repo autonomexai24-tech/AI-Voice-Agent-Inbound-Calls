@@ -65,12 +65,14 @@ If the database password contains `@`, percent-encode it as `%40` in `DATABASE_U
 5. Configure the application service to build from this repository's `Dockerfile`.
 6. Expose public HTTPS traffic to container port `3000`.
 7. Keep the service as a single container; Supervisor starts the Python worker and Next.js dashboard.
-8. Deploy the service.
+8. Deploy the service. If Easypanel appears to reuse a stale Docker layer, set or increment build arg `CACHE_BUST` and rebuild.
 9. Watch logs until `Initialized database schema` appears and Supervisor starts both programs.
 10. Open `https://<domain>/api/health?scope=liveness` and confirm it returns `status: "alive"`.
 11. Open `https://<domain>/api/health` and confirm strict readiness returns `status: "healthy"`.
 
 The Docker healthcheck calls `http://127.0.0.1:3000/api/health?scope=liveness` so Easypanel can promote a new frontend container when the web process is alive. Use `/api/health` without query parameters for strict backend readiness; it checks env vars, PostgreSQL, schema, and agent runtime state.
+
+The Dockerfile removes stale `.next` artifacts inside the frontend builder stage before `next build`, and `.dockerignore` excludes local `frontend/.next`, `frontend/node_modules`, and `frontend/tsconfig.tsbuildinfo` from the build context.
 
 ---
 

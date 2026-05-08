@@ -1,14 +1,20 @@
+ARG CACHE_BUST=1
+
 FROM node:20-slim AS frontend-builder
+ARG CACHE_BUST
 
 WORKDIR /app/frontend
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY frontend/package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci --include=dev; else npm install --include=dev; fi
+RUN echo "[docker] Frontend dependency cache bust: ${CACHE_BUST}" \
+    && if [ -f package-lock.json ]; then npm ci --include=dev; else npm install --include=dev; fi
 
 COPY frontend/ ./
-RUN NODE_ENV=production npm run build && test -f .next/standalone/server.js
+RUN rm -rf .next tsconfig.tsbuildinfo \
+    && NODE_ENV=production npm run build \
+    && test -f .next/standalone/server.js
 
 FROM python:3.11-slim AS python-builder
 
@@ -42,7 +48,7 @@ ENV PATH=/root/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=frontend-builder /usr/local /usr/local
 COPY --from=python-builder /root/.local /root/.local
 COPY agent.py db.py init_db.py launch_validate.py notifications.py schema.sql start.sh tools.py ./
 COPY --from=frontend-builder /app/frontend/.next/standalone ./frontend/.next/standalone
