@@ -1,10 +1,21 @@
 import { NextResponse } from "next/server";
+import { readFile } from "node:fs/promises";
 import { queryPostgres } from "../../../lib/postgres-server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type HealthCheckStatus = "ok" | "missing" | "failed";
+type AgentRuntimeStatus = {
+  status?: string;
+  timestamp?: string;
+  pid?: number;
+  call_id?: string | null;
+  room?: string | null;
+  component?: string;
+  error_type?: string;
+  error?: string;
+};
 
 const requiredEnvGroups: Array<{ key: string; names: string[] }> = [
   { key: "databaseUrl", names: ["DATABASE_URL"] },
@@ -20,6 +31,13 @@ const requiredEnvGroups: Array<{ key: string; names: string[] }> = [
 ];
 
 const requiredTables = ["call_logs", "transcripts", "bookings", "agent_config", "notification_events"];
+const agentStatusPath = process.env.AGENT_STATUS_PATH || "/tmp/inbound-agent-status.json";
+const failedAgentStatuses = new Set([
+  "startup_failed",
+  "startup_db_failed",
+  "livekit_connect_failed",
+  "agent_start_failed"
+]);
 
 function envGroupStatus(names: string[]): HealthCheckStatus {
   return names.some((name) => process.env[name]?.trim()) ? "ok" : "missing";
@@ -41,6 +59,34 @@ function redactKnownSecrets(message: string) {
   return secrets.reduce((redacted, secret) => redacted.replaceAll(secret, "***"), message);
 }
 
+async function readAgentRuntimeStatus() {
+  try {
+    const rawStatus = await readFile(/* turbopackIgnore: true */ agentStatusPath, "utf-8");
+    const status = JSON.parse(rawStatus) as AgentRuntimeStatus;
+    return {
+      check: failedAgentStatuses.has(status.status || "") ? "failed" : "ok",
+      status
+    } satisfies { check: HealthCheckStatus; status: AgentRuntimeStatus };
+  } catch (error) {
+    const nodeError = error as NodeJS.ErrnoException;
+    if (nodeError.code === "ENOENT") {
+      return {
+        check: "missing",
+        status: null
+      } satisfies { check: HealthCheckStatus; status: null };
+    }
+
+    return {
+      check: "failed",
+      status: {
+        status: "unreadable",
+        error_type: error instanceof Error ? error.name : "UnknownError",
+        error: errorMessage(error)
+      }
+    } satisfies { check: HealthCheckStatus; status: AgentRuntimeStatus };
+  }
+}
+
 export async function GET() {
   const startedAt = Date.now();
   const checks: Record<string, HealthCheckStatus> = {
@@ -51,6 +97,8 @@ export async function GET() {
   for (const group of requiredEnvGroups) {
     checks[group.key] = envGroupStatus(group.names);
   }
+  const agentRuntime = await readAgentRuntimeStatus();
+  checks.agentRuntime = agentRuntime.check;
 
   const calcomEventTypeId = process.env.CALCOM_EVENT_TYPE_ID || process.env.CAL_EVENT_TYPE_ID || "";
   if (checks.calcomEventTypeId === "ok" && !Number.isInteger(Number(calcomEventTypeId))) {
@@ -82,10 +130,13 @@ export async function GET() {
     databaseError = errorMessage(error);
   }
 
-  const healthy = Object.values(checks).every((status) => status === "ok");
+  const healthy = Object.entries(checks).every(
+    ([key, status]) => status === "ok" || (key === "agentRuntime" && status === "missing")
+  );
   const body = {
     status: healthy ? "healthy" : "unhealthy",
     checks,
+    agentRuntime: agentRuntime.status,
     timestamp: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
     ...(databaseError ? { databaseError } : {})

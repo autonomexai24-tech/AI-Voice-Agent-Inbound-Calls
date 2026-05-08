@@ -24,6 +24,8 @@ create table if not exists transcripts (
 
 create table if not exists bookings (
   call_id uuid primary key references call_logs(id) on delete cascade,
+  caller_name text,
+  caller_phone text,
   appointment_time timestamptz not null,
   status text not null default 'pending',
   sms_sent boolean not null default false
@@ -51,10 +53,23 @@ create table if not exists agent_config (
   system_prompt text not null,
   vad_threshold numeric(4, 3) not null default 0.500,
   language_code varchar(10) not null default 'en-IN',
+  tts_speaker text not null default 'amelia',
   mixed_language_enabled boolean not null default false,
   updated_at timestamptz not null default now(),
   constraint agent_config_vad_threshold_range
-    check (vad_threshold >= 0 and vad_threshold <= 1)
+    check (vad_threshold >= 0.3 and vad_threshold <= 0.7),
+  constraint agent_config_language_supported
+    check (language_code in ('en-IN', 'hi-IN', 'kn-IN')),
+  constraint agent_config_tts_speaker_supported
+    check (tts_speaker in ('amelia', 'kavya', 'kavitha')),
+  constraint agent_config_tts_speaker_matches_language
+    check (
+      (language_code = 'en-IN' and tts_speaker = 'amelia')
+      or (language_code = 'hi-IN' and tts_speaker = 'kavya')
+      or (language_code = 'kn-IN' and tts_speaker = 'kavitha')
+    ),
+  constraint agent_config_required_text
+    check (btrim(initial_greeting) <> '' and btrim(system_prompt) <> '')
 );
 
 alter table call_logs
@@ -79,6 +94,9 @@ alter table agent_config
   add column if not exists language_code varchar(10) not null default 'en-IN';
 
 alter table agent_config
+  add column if not exists tts_speaker text not null default 'amelia';
+
+alter table agent_config
   add column if not exists mixed_language_enabled boolean not null default false;
 
 alter table agent_config
@@ -93,6 +111,67 @@ alter table agent_config
 alter table agent_config
   add column if not exists booking_instructions text not null default 'Confirm caller name, phone number, date, and time before booking.';
 
+alter table agent_config
+  drop constraint if exists agent_config_vad_threshold_range;
+
+alter table agent_config
+  add constraint agent_config_vad_threshold_range
+  check (vad_threshold >= 0.3 and vad_threshold <= 0.7)
+  not valid;
+
+alter table agent_config
+  drop constraint if exists agent_config_language_supported;
+
+alter table agent_config
+  add constraint agent_config_language_supported
+  check (language_code in ('en-IN', 'hi-IN', 'kn-IN'))
+  not valid;
+
+alter table agent_config
+  drop constraint if exists agent_config_tts_speaker_supported;
+
+alter table agent_config
+  add constraint agent_config_tts_speaker_supported
+  check (tts_speaker in ('amelia', 'kavya', 'kavitha'))
+  not valid;
+
+update agent_config
+set tts_speaker = case language_code
+  when 'hi-IN' then 'kavya'
+  when 'kn-IN' then 'kavitha'
+  else 'amelia'
+end
+where (language_code = 'en-IN' and tts_speaker <> 'amelia')
+   or (language_code = 'hi-IN' and tts_speaker <> 'kavya')
+   or (language_code = 'kn-IN' and tts_speaker <> 'kavitha')
+   or tts_speaker not in ('amelia', 'kavya', 'kavitha');
+
+alter table agent_config
+  drop constraint if exists agent_config_tts_speaker_matches_language;
+
+alter table agent_config
+  add constraint agent_config_tts_speaker_matches_language
+  check (
+    (language_code = 'en-IN' and tts_speaker = 'amelia')
+    or (language_code = 'hi-IN' and tts_speaker = 'kavya')
+    or (language_code = 'kn-IN' and tts_speaker = 'kavitha')
+  )
+  not valid;
+
+alter table agent_config
+  drop constraint if exists agent_config_required_text;
+
+alter table agent_config
+  add constraint agent_config_required_text
+  check (btrim(initial_greeting) <> '' and btrim(system_prompt) <> '')
+  not valid;
+
+alter table bookings
+  add column if not exists caller_name text;
+
+alter table bookings
+  add column if not exists caller_phone text;
+
 insert into agent_config (
   business_name,
   business_phone,
@@ -102,6 +181,7 @@ insert into agent_config (
   system_prompt,
   vad_threshold,
   language_code,
+  tts_speaker,
   mixed_language_enabled
 )
 select
@@ -113,6 +193,7 @@ select
   'You are a helpful inbound voice agent. Keep responses brief, natural, and focused on helping the caller.',
   0.500,
   'en-IN',
+  'amelia',
   false
 where not exists (
   select 1 from agent_config

@@ -52,7 +52,7 @@ export async function loginAction(_previousState: LoginActionState, formData: Fo
     value: token,
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "strict",
     path: "/",
     maxAge: getSessionMaxAge()
   });

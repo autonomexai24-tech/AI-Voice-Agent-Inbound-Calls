@@ -45,7 +45,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=python-builder /root/.local /root/.local
-COPY . .
+COPY agent.py db.py init_db.py launch_validate.py notifications.py schema.sql start.sh tools.py ./
 COPY --from=frontend-builder /app/frontend/.next/standalone ./frontend/.next/standalone
 COPY --from=frontend-builder /app/frontend/.next/static ./frontend/.next/standalone/.next/static
 COPY --from=frontend-builder /app/frontend/public ./frontend/.next/standalone/public

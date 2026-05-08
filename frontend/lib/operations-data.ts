@@ -28,6 +28,8 @@ type TranscriptRow = {
 
 type BookingRow = {
   call_id: string;
+  caller_name?: string | null;
+  caller_phone?: string | null;
   appointment_time: string | null;
   status: string | null;
   sms_sent?: boolean | null;
@@ -57,6 +59,7 @@ export type CalendarFilters = {
 
 export type CrmCallRow = {
   id: string;
+  callRef: string;
   phoneNumber: string;
   callerName: string;
   startTime: string | null;
@@ -75,6 +78,7 @@ export type CrmCallRow = {
 
 export type CalendarBookingRow = {
   callId: string;
+  callRef: string;
   phoneNumber: string;
   callerName: string;
   appointmentTime: string | null;
@@ -141,6 +145,15 @@ function toNumber(value: string | number | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+export function encodeCallRef(callId: string) {
+  return Buffer.from(callId, "utf8").toString("base64url");
+}
+
+export function decodeCallRef(callRef: string) {
+  const decoded = Buffer.from(callRef, "base64url").toString("utf8");
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decoded) ? decoded : callRef;
+}
+
 function buildTranscriptSummary(transcripts: TranscriptRow[]) {
   const summary = transcripts
     .sort((left, right) => (left.timestamp ?? "").localeCompare(right.timestamp ?? ""))
@@ -192,8 +205,9 @@ function buildCallRow(
 
   return {
     id: call.id,
-    phoneNumber: call.phone_number ?? "Unknown",
-    callerName: call.caller_name ?? "Unknown",
+    callRef: encodeCallRef(call.id),
+    phoneNumber: booking?.caller_phone ?? call.phone_number ?? "Unknown",
+    callerName: booking?.caller_name ?? call.caller_name ?? "Unknown",
     startTime: call.start_time,
     duration: call.duration,
     status: call.status ?? "unknown",
@@ -240,7 +254,18 @@ export async function getCrmCalls(filters: CrmFilters = {}): Promise<OperationsR
 
   if (search) {
     values.push(`%${search}%`);
-    conditions.push(`(phone_number ilike $${values.length} or caller_name ilike $${values.length})`);
+    conditions.push(`
+      (
+        phone_number ilike $${values.length}
+        or caller_name ilike $${values.length}
+        or exists (
+          select 1
+          from bookings b
+          where b.call_id = call_logs.id
+            and (b.caller_phone ilike $${values.length} or b.caller_name ilike $${values.length})
+        )
+      )
+    `);
   }
 
   const bookingFilter = normalizeBookingFilter(filters.booking);
@@ -341,7 +366,7 @@ export async function getCrmCalls(filters: CrmFilters = {}): Promise<OperationsR
       ),
       queryPostgres<BookingRow>(
         `
-        select call_id, status, appointment_time, sms_sent
+        select call_id, caller_name, caller_phone, status, appointment_time, sms_sent
         from bookings
         where call_id = any($1::uuid[])
         `,
@@ -421,7 +446,7 @@ export async function getCrmCallDetail(callId: string): Promise<DetailResult<Crm
       ),
       queryPostgres<BookingRow>(
         `
-        select call_id, appointment_time, status, sms_sent
+        select call_id, caller_name, caller_phone, appointment_time, status, sms_sent
         from bookings
         where call_id = $1
         limit 1
@@ -467,7 +492,12 @@ export async function getCalendarBookings(
 
   if (search) {
     values.push(`%${search}%`);
-    conditions.push(`(c.phone_number ilike $${values.length} or c.caller_name ilike $${values.length})`);
+    conditions.push(`
+      (
+        coalesce(b.caller_phone, c.phone_number) ilike $${values.length}
+        or coalesce(b.caller_name, c.caller_name) ilike $${values.length}
+      )
+    `);
   }
 
   const statusFilter = normalizeCalendarStatusFilter(filters.status);
@@ -500,8 +530,8 @@ export async function getCalendarBookings(
         b.appointment_time,
         b.status,
         b.sms_sent,
-        c.phone_number,
-        c.caller_name
+        coalesce(b.caller_phone, c.phone_number) as phone_number,
+        coalesce(b.caller_name, c.caller_name) as caller_name
       from bookings b
       left join call_logs c on c.id = b.call_id
       ${whereClause}
@@ -515,6 +545,7 @@ export async function getCalendarBookings(
     return {
       rows: bookingsResult.rows.map((booking) => ({
         callId: booking.call_id,
+        callRef: encodeCallRef(booking.call_id),
         phoneNumber: booking.phone_number ?? "Unknown",
         callerName: booking.caller_name ?? "Unknown",
         appointmentTime: booking.appointment_time,

@@ -1,5 +1,6 @@
 import "server-only";
 import { queryPostgres } from "./postgres-server";
+import { encodeCallRef } from "./operations-data";
 
 export type DateRangeKey = "today" | "7d" | "30d" | "all";
 
@@ -48,6 +49,7 @@ export type PeakHourMetric = {
 
 export type RecentBookingMetric = {
   callId: string;
+  callRef: string;
   appointmentTime: string | null;
   status: string;
   smsSent: boolean;
@@ -257,8 +259,8 @@ export async function getDashboardMetrics(range?: string | null): Promise<Dashbo
           b.appointment_time,
           b.status,
           b.sms_sent,
-          c.phone_number,
-          c.caller_name
+          coalesce(b.caller_phone, c.phone_number) as phone_number,
+          coalesce(b.caller_name, c.caller_name) as caller_name
         from bookings b
         join call_logs c on c.id = b.call_id
         where b.status = 'confirmed'
@@ -301,6 +303,7 @@ export async function getDashboardMetrics(range?: string | null): Promise<Dashbo
       }),
       recentBookings: recentBookingsResult.rows.map((row) => ({
         callId: row.call_id,
+        callRef: encodeCallRef(row.call_id),
         appointmentTime: row.appointment_time,
         status: row.status ?? "confirmed",
         smsSent: Boolean(row.sms_sent),

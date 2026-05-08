@@ -3,7 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
-import type { AgentConfig, LanguageCode } from "../../lib/agent-config-data";
+import type { AgentConfig, LanguageCode, TtsSpeaker } from "../../lib/agent-config-data";
 import { type AgentConfigActionState, saveAgentConfig } from "./actions";
 
 const initialState: AgentConfigActionState = {
@@ -11,11 +11,23 @@ const initialState: AgentConfigActionState = {
   message: ""
 };
 
-const languageOptions: Array<{ label: string; value: LanguageCode; voice: string; stt: string }> = [
-  { label: "English", value: "en-IN", voice: "Amelia", stt: "English language hint" },
-  { label: "Hindi", value: "hi-IN", voice: "Kavya", stt: "Hindi language hint" },
-  { label: "Kannada", value: "kn-IN", voice: "Kavitha", stt: "Kannada language hint" }
+const languageOptions: Array<{ label: string; value: LanguageCode; stt: string }> = [
+  { label: "English", value: "en-IN", stt: "English language hint" },
+  { label: "Hindi", value: "hi-IN", stt: "Hindi language hint" },
+  { label: "Kannada", value: "kn-IN", stt: "Kannada language hint" }
 ];
+
+const speakerOptions: Array<{ label: string; value: TtsSpeaker }> = [
+  { label: "Amelia", value: "amelia" },
+  { label: "Kavya", value: "kavya" },
+  { label: "Kavitha", value: "kavitha" }
+];
+
+const ttsSpeakerByLanguage: Record<LanguageCode, TtsSpeaker> = {
+  "en-IN": "amelia",
+  "hi-IN": "kavya",
+  "kn-IN": "kavitha"
+};
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -64,10 +76,17 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
   const [state, formAction] = useActionState(saveAgentConfig, initialState);
   const [primaryLanguage, setPrimaryLanguage] = useState<LanguageCode>(config.languageCode);
   const [mixedLanguageEnabled, setMixedLanguageEnabled] = useState(config.mixedLanguageEnabled);
+  const [vadThreshold, setVadThreshold] = useState(String(config.vadThreshold));
   const selectedLanguage = useMemo(
     () => languageOptions.find((option) => option.value === primaryLanguage) ?? languageOptions[0],
     [primaryLanguage]
   );
+  const selectedSpeaker = useMemo(
+    () => speakerOptions.find((option) => option.value === ttsSpeakerByLanguage[primaryLanguage]) ?? speakerOptions[0],
+    [primaryLanguage]
+  );
+  const parsedVadThreshold = Number.parseFloat(vadThreshold);
+  const isVadThresholdValid = Number.isFinite(parsedVadThreshold) && parsedVadThreshold >= 0.3 && parsedVadThreshold <= 0.7;
 
   return (
     <form action={formAction} className="mt-6 grid gap-5">
@@ -136,6 +155,13 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
                     </option>
                   ))}
                 </select>
+                <input type="hidden" name="ttsSpeaker" value={selectedSpeaker.value} />
+                <div className="grid gap-2">
+                  <FieldLabel label="TTS speaker" detail="Mapped automatically from the selected language." />
+                  <div className="h-10 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-medium text-neutral-950">
+                    {selectedSpeaker.label}
+                  </div>
+                </div>
                 <label className="mt-2 flex items-start gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
                   <input
                     name="mixedLanguageEnabled"
@@ -157,7 +183,7 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
                 <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-xs uppercase text-neutral-500">TTS voice</p>
-                    <p className="mt-1 font-medium text-neutral-900">{selectedLanguage.voice}</p>
+                    <p className="mt-1 font-medium text-neutral-900">{selectedSpeaker.label}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase text-neutral-500">STT mode</p>
@@ -225,10 +251,15 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
                 min="0.3"
                 max="0.7"
                 step="0.01"
-                defaultValue={config.vadThreshold}
+                value={vadThreshold}
+                onChange={(event) => setVadThreshold(event.target.value)}
+                aria-invalid={!isVadThresholdValid}
                 required
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-950 outline-none focus:border-neutral-950"
               />
+              {!isVadThresholdValid ? (
+                <p className="text-xs font-medium text-rose-700">Use a value from 0.3 to 0.7.</p>
+              ) : null}
             </label>
             <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
               Practical phone-call range is 0.3 to 0.7. The backend clamps unsafe values unless emergency override is
@@ -245,7 +276,7 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
               </div>
               <div className="flex justify-between gap-3">
                 <span className="text-neutral-400">Voice</span>
-                <span className="font-medium">{selectedLanguage.voice}</span>
+                <span className="font-medium">{selectedSpeaker.label}</span>
               </div>
               <div className="flex justify-between gap-3">
                 <span className="text-neutral-400">Mixed mode</span>
@@ -253,7 +284,7 @@ export function AgentConfigForm({ config }: { config: AgentConfig }) {
               </div>
               <div className="flex justify-between gap-3">
                 <span className="text-neutral-400">VAD</span>
-                <span className="font-medium">{config.vadThreshold}</span>
+                <span className="font-medium">{isVadThresholdValid ? parsedVadThreshold.toFixed(2) : "Invalid"}</span>
               </div>
             </div>
           </section>

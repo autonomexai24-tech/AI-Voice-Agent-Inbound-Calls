@@ -18,10 +18,14 @@ export default async function AgentConfigPage() {
               taking. New inbound calls load these settings at runtime.
             </p>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-4">
+          <div className="mt-5 grid gap-3 sm:grid-cols-5">
             <div className="rounded-lg bg-neutral-50 p-3">
               <p className="text-xs text-neutral-500">Primary language</p>
               <p className="mt-1 text-sm font-semibold text-neutral-950">{result.config.languageCode}</p>
+            </div>
+            <div className="rounded-lg bg-neutral-50 p-3">
+              <p className="text-xs text-neutral-500">TTS speaker</p>
+              <p className="mt-1 text-sm font-semibold capitalize text-neutral-950">{result.config.ttsSpeaker}</p>
             </div>
             <div className="rounded-lg bg-neutral-50 p-3">
               <p className="text-xs text-neutral-500">Mixed mode</p>

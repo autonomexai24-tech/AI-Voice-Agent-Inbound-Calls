@@ -246,7 +246,7 @@ A microservices architecture would mean:
 
 ## 9. Why RAG Is Intentionally Avoided
 
-See `/docs/LATENCY.md` for the full latency analysis. In summary:
+In summary:
 
 - RAG adds 50-300ms per retrieval step.
 - Multi-step RAG adds 200-1000ms per turn.
@@ -366,7 +366,7 @@ Every architectural choice is a cost decision:
 | No vector DB vs. pgvector/Pinecone | ~₹2,000–5,000 |
 | No multi-agent vs. LangChain | ₹0 (complexity cost, not direct) |
 | Concise prompts (200 tokens vs. 2000) | ~₹500–1,500 (LLM token costs) |
-| Short replies (120 tokens max) | ~₹300–800 (LLM output tokens) |
+| Short replies (150 tokens max) | ~₹300–800 (LLM output tokens) |
 | Raw SQL vs. ORM | ₹0 (no runtime overhead) |
 | Single VPS vs. managed cloud | ~₹5,000–15,000 |
 
@@ -391,7 +391,7 @@ At GPT-4o pricing (~$2.50/1M input, ~$10/1M output):
 3. **No vector database** — business context fits in prompts.
 4. **No multi-agent orchestration** — one LLM call per turn.
 5. **Concise system prompts** — under 300 tokens.
-6. **Concise replies** — `max_completion_tokens=160`.
+6. **Concise replies** — `max_completion_tokens=150`.
 7. **Lightweight SQL** — no ORM overhead, no complex joins.
 8. **No GPU dependency** — all AI inference via API (OpenAI, Sarvam).
 9. **Easypanel simplicity** — no DevOps team needed.

@@ -11,6 +11,7 @@ import httpx
 logger = logging.getLogger("notifications")
 
 FAST2SMS_URL = "https://www.fast2sms.com/dev/bulkV2"
+FAST2SMS_TIMEOUT = httpx.Timeout(10.0, connect=3.0, read=8.0, write=3.0, pool=2.0)
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,15 @@ def _truncate_provider_response(value: Any, limit: int = 2000) -> str:
     return text if len(text) <= limit else f"{text[:limit]}..."
 
 
+def _normalize_indian_sms_number(phone_number: str) -> str:
+    digits = "".join(character for character in phone_number if character.isdigit())
+    if digits.startswith("91") and len(digits) == 12:
+        digits = digits[2:]
+    if len(digits) != 10:
+        raise ValueError("Fast2SMS requires a 10 digit Indian mobile number")
+    return digits
+
+
 async def send_booking_sms_with_result(
     phone_number: str,
     appointment_details: dict[str, Any] | str,
@@ -50,6 +60,12 @@ async def send_booking_sms_with_result(
     if not api_key:
         logger.error("[FAST2SMS] FAST2SMS_API_KEY is not configured")
         return SmsSendResult(sent=False, error_message="FAST2SMS_API_KEY is not configured")
+
+    try:
+        sms_number = _normalize_indian_sms_number(phone_number)
+    except ValueError as exc:
+        logger.error("[FAST2SMS] Invalid SMS phone number phone_last4=%s error=%s", phone_number[-4:], exc)
+        return SmsSendResult(sent=False, error_message=str(exc))
 
     details = _format_appointment_details(appointment_details)
     clean_business_name = business_name.strip() or "Dental Clinic"
@@ -63,19 +79,19 @@ async def send_booking_sms_with_result(
         "message": message,
         "language": "english",
         "flash": "0",
-        "numbers": phone_number,
+        "numbers": sms_number,
     }
 
     try:
         started_at = perf_counter()
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=FAST2SMS_TIMEOUT) as client:
             response = await client.post(
                 FAST2SMS_URL,
                 headers={
                     "authorization": api_key,
-                    "Content-Type": "application/json",
+                    "Content-Type": "application/x-www-form-urlencoded",
                 },
-                json=payload,
+                data=payload,
             )
         duration_ms = round((perf_counter() - started_at) * 1000)
     except httpx.TimeoutException:

@@ -1,6 +1,7 @@
 import os
 from contextlib import contextmanager
 from typing import Any, Iterator, Sequence
+from urllib.parse import urlsplit
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -13,10 +14,24 @@ class DatabaseConfigError(RuntimeError):
     pass
 
 
+def _validate_database_url(database_url: str) -> None:
+    parsed = urlsplit(database_url)
+    if parsed.scheme not in {"postgres", "postgresql"} or not parsed.netloc:
+        raise DatabaseConfigError("DATABASE_URL must be a full PostgreSQL connection URL.")
+
+    userinfo = parsed.netloc.rsplit("@", 1)[0] if "@" in parsed.netloc else ""
+    if "@" in userinfo:
+        raise DatabaseConfigError(
+            "DATABASE_URL contains an unescaped @ in the username/password section. "
+            "Percent-encode @ as %40 in the database password."
+        )
+
+
 def _required_database_url() -> str:
     value = os.environ.get(DATABASE_URL_ENV, "").strip()
     if not value:
         raise DatabaseConfigError(f"Missing required environment variable: {DATABASE_URL_ENV}")
+    _validate_database_url(value)
     return value
 
 

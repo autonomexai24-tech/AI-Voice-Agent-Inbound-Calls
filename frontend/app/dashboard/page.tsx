@@ -37,15 +37,21 @@ function formatAppointment(value: string | null) {
   }).format(new Date(value));
 }
 
+function dateRangeLabel(value: string) {
+  return dateRangeOptions.find((option) => option.value === value)?.label ?? "Last 30 days";
+}
+
 function MetricCard({
   label,
   value,
   note,
+  eyebrow,
   tone = "neutral"
 }: {
   label: string;
   value: string;
   note: string;
+  eyebrow?: string;
   tone?: "neutral" | "dark" | "success" | "warning";
 }) {
   const toneClass = {
@@ -56,11 +62,16 @@ function MetricCard({
   }[tone];
 
   return (
-    <article className={`rounded-2xl border p-5 shadow-sm ${toneClass}`}>
-      <p className={tone === "dark" ? "text-sm font-medium text-neutral-300" : "text-sm font-medium text-neutral-500"}>
+    <article className={`rounded-xl border p-5 shadow-sm ${toneClass}`}>
+      {eyebrow ? (
+        <p className={tone === "dark" ? "text-xs font-semibold uppercase text-neutral-400" : "text-xs font-semibold uppercase text-neutral-500"}>
+          {eyebrow}
+        </p>
+      ) : null}
+      <p className={["text-sm font-medium", eyebrow ? "mt-2" : "", tone === "dark" ? "text-neutral-300" : "text-neutral-500"].join(" ")}>
         {label}
       </p>
-      <p className="mt-4 text-3xl font-semibold tracking-normal">{value}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-normal">{value}</p>
       <p className={tone === "dark" ? "mt-3 text-sm text-neutral-300" : "mt-3 text-sm text-neutral-500"}>{note}</p>
     </article>
   );
@@ -109,24 +120,25 @@ function TrendChart({ trends }: { trends: TrendMetric[] }) {
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const params = await searchParams;
   const metrics = await getDashboardMetrics(params?.range);
+  const activeRangeLabel = dateRangeLabel(metrics.dateRange);
   const maxLanguageCalls = Math.max(1, ...metrics.languageUsage.map((item) => item.calls));
   const maxPeakCalls = Math.max(1, ...metrics.peakCallHours.map((item) => item.calls));
 
   return (
     <section className="min-h-screen px-5 py-6 sm:px-8 lg:px-10">
       <div className="mx-auto max-w-7xl">
-        <div className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
-          <div className="grid gap-6 p-6 lg:grid-cols-[1fr_340px] lg:p-8">
+        <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+          <div className="grid gap-6 p-6 lg:grid-cols-[1fr_320px] lg:p-8">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Vapi-style operations</p>
-              <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-normal text-neutral-950">
-                Inbound voice performance
-              </h1>
+              <p className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Operations dashboard</p>
+              <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-normal text-neutral-950">Inbound voice performance</h1>
               <p className="mt-4 max-w-2xl text-sm leading-6 text-neutral-600">
-                Real call, booking, language, and repeat-caller metrics from PostgreSQL. This screen is designed for
-                quick operator scanning during live clinic operations.
+                Call volume, booking conversion, and follow-up signals for the selected reporting range.
               </p>
-              <div className="mt-6 flex flex-wrap gap-3">
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <span className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-neutral-800">
+                  Range: {activeRangeLabel}
+                </span>
                 <Link
                   href="/crm"
                   className="rounded-md bg-neutral-950 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800"
@@ -170,39 +182,39 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </div>
         ) : null}
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-          <div className="xl:col-span-2">
-            <MetricCard
-              tone="dark"
-              label="Booked appointments"
-              value={metrics.confirmedBookings.toLocaleString("en-US")}
-              note="Confirmed booking records"
-            />
-          </div>
-          <div className="xl:col-span-2">
-            <MetricCard
-              label="Booking conversion"
-              value={`${metrics.bookingRate.toFixed(1)}%`}
-              note="Confirmed bookings / total calls"
-              tone="success"
-            />
-          </div>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             label="Total calls"
             value={metrics.totalCalls.toLocaleString("en-US")}
-            note="Inbound call records"
+            note={`Inbound call records in ${activeRangeLabel.toLowerCase()}`}
           />
+          <MetricCard
+            label="Booking conversion"
+            value={`${metrics.bookingRate.toFixed(1)}%`}
+            note="Confirmed bookings / total calls"
+            tone="success"
+          />
+          <MetricCard label="Average duration" value={formatDuration(metrics.avgDurationSeconds)} note="Calls with recorded duration" />
           <MetricCard
             label="Missed / failed"
             value={metrics.failedCalls.toLocaleString("en-US")}
-            note="Needs attention"
+            note="Failed, missed, or errored calls"
             tone={metrics.failedCalls > 0 ? "warning" : "neutral"}
           />
-          <MetricCard label="Avg duration" value={formatDuration(metrics.avgDurationSeconds)} note="Completed calls" />
-          <MetricCard label="Repeat callers" value={metrics.repeatCallers.toLocaleString("en-US")} note="2+ calls" />
         </div>
 
-        <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+          <MetricCard
+            tone="dark"
+            eyebrow="Business goal"
+            label="Booked appointments"
+            value={metrics.confirmedBookings.toLocaleString("en-US")}
+            note="Confirmed booking records"
+          />
+          <MetricCard label="Repeat callers" value={metrics.repeatCallers.toLocaleString("en-US")} note="Phone numbers with 2+ calls" />
+        </div>
+
+        <section className="mt-6 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-neutral-500">Call volume and booking success</p>
@@ -219,7 +231,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </section>
 
         <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_1fr]">
-          <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-500">Language usage</p>
@@ -252,7 +264,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </div>
           </section>
 
-          <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-500">Peak call hours</p>
@@ -286,7 +298,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </section>
         </div>
 
-        <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <section className="mt-6 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-neutral-500">Booked appointments</p>
@@ -325,7 +337,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     SMS {booking.smsSent ? "sent" : "pending"}
                   </span>
                   <Link
-                    href={`/crm/${booking.callId}`}
+                    href={`/crm/${booking.callRef}`}
                     className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs font-semibold text-neutral-800 hover:border-neutral-950"
                   >
                     Transcript

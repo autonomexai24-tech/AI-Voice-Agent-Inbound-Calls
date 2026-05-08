@@ -2,12 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { DASHBOARD_AUTH_COOKIE, verifyDashboardSessionToken } from "./lib/dashboard-auth";
 
 function isPublicRoute(pathname: string) {
-  return (
-    pathname === "/login" ||
-    pathname === "/api/health" ||
-    pathname.startsWith("/api/webhook") ||
-    pathname.startsWith("/api/webhooks")
-  );
+  return pathname === "/login" || pathname === "/api/health";
 }
 
 export async function middleware(request: NextRequest) {

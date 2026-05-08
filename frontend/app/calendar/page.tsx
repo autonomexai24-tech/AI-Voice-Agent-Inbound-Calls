@@ -197,7 +197,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
                       </td>
                       <td className="whitespace-nowrap px-4 py-4">
                         <Link
-                          href={`/crm/${row.callId}`}
+                          href={`/crm/${row.callRef}`}
                           className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-800 hover:border-neutral-950"
                         >
                           Transcript

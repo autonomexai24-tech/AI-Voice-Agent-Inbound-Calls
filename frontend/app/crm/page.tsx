@@ -236,7 +236,7 @@ export default async function CrmPage({ searchParams }: CrmPageProps) {
                     </a>
                   ) : null}
                   <Link
-                    href={`/crm/${row.id}`}
+                    href={`/crm/${row.callRef}`}
                     className="rounded-md bg-neutral-950 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-neutral-800"
                   >
                     Open transcript

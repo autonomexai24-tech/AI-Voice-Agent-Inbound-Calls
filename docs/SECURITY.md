@@ -262,7 +262,9 @@ When recording links are stored:
 | Constant-time comparison prevents timing attacks | ✅ |
 | Login password check uses constant-time hash comparison | ✅ |
 | Session stored in `inbound_dashboard_session` cookie | ✅ |
-| 12-hour session expiration via `maxAge` | ✅ Cookie expires after 12 hours |
+| 12-hour default session expiration via `maxAge` | ✅ Cookie expires after 12 hours (default) |
+| Configurable session duration via `DASHBOARD_SESSION_MAX_AGE` | ✅ `getSessionMaxAge()` in `dashboard-auth.ts` |
+| Logout endpoint (`POST /api/logout`) | ✅ Clears session cookie |
 | Webhook routes (`/api/webhook*`) are public | ✅ Required for external integrations |
 | Security headers are emitted by Next.js | ✅ CSP, HSTS, frame, MIME, referrer, permissions policy |
 
@@ -270,9 +272,7 @@ When recording links are stored:
 
 | Feature | Target |
 |---------|--------|
-| Configurable session duration (currently fixed at 12h) | Part 14 |
-| Logout endpoint (clear cookie) | Part 14 |
-| Rate limiting on login attempts | Part 14 |
+| Rate limiting on login attempts | Part 14 or later |
 | Account lockout after failed attempts | Phase 2 |
 | Per-user sessions (multi-business) | Phase 2 |
 
@@ -323,7 +323,7 @@ Every request → middleware → verifyDashboardSessionToken()
 ### Limitations
 
 - No session revocation (short of changing the password).
-- 12-hour expiration exists (`maxAge: 43200`), but duration is not configurable from dashboard.
+- 12-hour default expiration (`maxAge: 43200`), configurable via `DASHBOARD_SESSION_MAX_AGE` env var.
 - No concurrent session tracking.
 - Deterministic token means all sessions are identical.
 

@@ -4,6 +4,7 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -20,6 +21,8 @@ load_dotenv()
 logger = logging.getLogger("inbound-agent")
 logging.basicConfig(level=logging.INFO)
 
+AGENT_STATUS_PATH = Path(os.environ.get("AGENT_STATUS_PATH", "/tmp/inbound-agent-status.json"))
+
 
 DEFAULT_AGENT_CONFIG = {
     "business_name": "Dental Clinic",
@@ -30,10 +33,12 @@ DEFAULT_AGENT_CONFIG = {
     "system_prompt": "You are a helpful inbound voice assistant.",
     "vad_threshold": 0.45,
     "language_code": "en-IN",
+    "tts_speaker": "amelia",
     "mixed_language_enabled": False,
 }
 
 TRANSCRIPT_TASKS: set[asyncio.Task[None]] = set()
+INITIAL_PARTICIPANT_WAIT_SECONDS = 3.0
 
 STARTUP_ENV_GROUPS = (
     ("DATABASE_URL", ("DATABASE_URL",)),
@@ -52,12 +57,14 @@ PRACTICAL_VAD_MIN = 0.3
 PRACTICAL_VAD_MAX = 0.7
 ENDPOINTING_MIN_DELAY = 0.15
 ENDPOINTING_MAX_DELAY = 0.8
+LLM_MAX_COMPLETION_TOKENS = 150
 MIN_INTERRUPTION_DURATION = 0.3
 FALSE_INTERRUPTION_TIMEOUT = 1.0
 VAD_MIN_SPEECH_DURATION = 0.04
 VAD_MIN_SILENCE_DURATION = 0.35
 VAD_PREFIX_PADDING_DURATION = 0.25
 VAD_MAX_BUFFERED_SPEECH = 12.0
+BOOKING_PREFLIGHT_FILLER = "One moment while I book that for you."
 
 SUPPORTED_LANGUAGE_CODES = {"en-IN", "hi-IN", "kn-IN"}
 LANGUAGE_LABELS = {
@@ -70,6 +77,11 @@ SARVAM_SPEAKERS_BY_LANGUAGE = {
     "hi-IN": "kavya",
     "kn-IN": "kavitha",
 }
+SUPPORTED_SARVAM_SPEAKERS = {
+    "amelia",
+    "kavya",
+    "kavitha",
+}
 
 
 def log_event(level: int, event: str, **fields: Any) -> None:
@@ -78,6 +90,28 @@ def log_event(level: int, event: str, **fields: Any) -> None:
         **fields,
     }
     logger.log(level, json.dumps(payload, default=str, sort_keys=True))
+
+
+def write_runtime_status(status: str, **fields: Any) -> None:
+    payload = {
+        "status": status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "pid": os.getpid(),
+        **fields,
+    }
+    try:
+        AGENT_STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = AGENT_STATUS_PATH.with_suffix(AGENT_STATUS_PATH.suffix + ".tmp")
+        temp_path.write_text(json.dumps(payload, default=str, sort_keys=True), encoding="utf-8")
+        temp_path.replace(AGENT_STATUS_PATH)
+    except Exception as exc:
+        log_event(
+            logging.WARNING,
+            "runtime_status_write_failed",
+            path=str(AGENT_STATUS_PATH),
+            error_type=type(exc).__name__,
+            error=_redact_secret_values(str(exc)),
+        )
 
 
 def _env_value(*names: str) -> str | None:
@@ -114,6 +148,7 @@ def validate_startup_environment() -> None:
         if not _env_value(*env_names)
     ]
     if missing:
+        write_runtime_status("startup_failed", component="environment", missing=missing)
         log_event(logging.ERROR, "startup_env_validation_failed", missing=missing)
         raise RuntimeError("Missing required environment variable(s): " + ", ".join(missing))
 
@@ -121,15 +156,24 @@ def validate_startup_environment() -> None:
     try:
         int(str(event_type_id))
     except (TypeError, ValueError) as exc:
+        write_runtime_status("startup_failed", component="environment", invalid=["CALCOM_EVENT_TYPE_ID"])
         log_event(logging.ERROR, "startup_env_validation_failed", invalid=["CALCOM_EVENT_TYPE_ID"])
         raise RuntimeError("CALCOM_EVENT_TYPE_ID must be an integer") from exc
 
     try:
         db.fetch_one("select 1 as ok")
     except Exception as exc:
-        log_event(logging.ERROR, "startup_db_validation_failed", error=_redact_secret_values(str(exc)))
+        redacted_error = _redact_secret_values(str(exc))
+        write_runtime_status(
+            "startup_db_failed",
+            component="database",
+            error_type=type(exc).__name__,
+            error=redacted_error,
+        )
+        log_event(logging.ERROR, "startup_db_validation_failed", error=redacted_error)
         raise RuntimeError("Database connectivity validation failed") from exc
 
+    write_runtime_status("startup_validated", component="startup")
     log_event(logging.INFO, "startup_validation_passed")
 
 
@@ -143,6 +187,7 @@ class AgentConfig:
     system_prompt: str
     vad_threshold: float
     language_code: str
+    tts_speaker: str
     mixed_language_enabled: bool
 
 
@@ -167,6 +212,7 @@ class VoicePipelineAgent:
     booking_instructions: str
     vad_threshold: float
     language_code: str
+    tts_speaker: str
     mixed_language_enabled: bool
     call_id: str | None = None
 
@@ -175,6 +221,7 @@ class VoicePipelineAgent:
         language_config = _build_runtime_language_config(
             self.language_code,
             self.mixed_language_enabled,
+            self.tts_speaker,
         )
         set_booking_call_context(self.call_id)
         assistant = InboundAssistant(
@@ -197,7 +244,7 @@ class VoicePipelineAgent:
             llm=openai.LLM(
                 model="gpt-4o",
                 temperature=0.2,
-                max_completion_tokens=150,
+                max_completion_tokens=LLM_MAX_COMPLETION_TOKENS,
             ),
             tts=sarvam.TTS(
                 target_language_code=language_config.tts_language_code,
@@ -228,7 +275,7 @@ class VoicePipelineAgent:
             room_input_options=RoomInputOptions(close_on_disconnect=False),
         )
         logger.info(
-            "[AGENT] Voice pipeline started for room=%s vad_threshold=%s language=%s stt_language=%s tts_language=%s speaker=%s mixed_language=%s",
+            "[AGENT] Voice pipeline started for room=%s vad_threshold=%s language=%s stt_language=%s tts_language=%s speaker=%s mixed_language=%s endpointing_min=%s endpointing_max=%s max_completion_tokens=%s",
             ctx.room.name,
             vad_threshold,
             language_config.primary_language_code,
@@ -236,6 +283,9 @@ class VoicePipelineAgent:
             language_config.tts_language_code,
             language_config.tts_speaker,
             language_config.mixed_language_enabled,
+            ENDPOINTING_MIN_DELAY,
+            ENDPOINTING_MAX_DELAY,
+            LLM_MAX_COMPLETION_TOKENS,
         )
 
 
@@ -272,7 +322,8 @@ class InboundAssistant(Agent):
             "If the caller wants to book an appointment, collect their name, phone number, "
             "and exact appointment date/time. Verbally repeat those details and ask for "
             "explicit confirmation. Call book_appointment only after the caller confirms. "
-            'Immediately before calling book_appointment, say only: "One moment while I book that for you." '
+            "When calling book_appointment, pass confirmed_by_caller=true only if the caller explicitly confirmed the repeated details. "
+            f'Immediately before calling book_appointment, say only: "{BOOKING_PREFLIGHT_FILLER}" '
             "After the tool returns, say only the result or ask for one alternate time. "
             "Do not use retrieval or multi-step RAG; rely only on this system prompt and "
             "the caller's current conversation for business context."
@@ -329,6 +380,22 @@ def _normalize_language_code(value: Any) -> str:
     return str(DEFAULT_AGENT_CONFIG["language_code"])
 
 
+def _normalize_tts_speaker(value: Any, language_code: str) -> str:
+    configured_speaker = str(value or "").strip().lower()
+    expected_speaker = SARVAM_SPEAKERS_BY_LANGUAGE[language_code]
+    if configured_speaker == expected_speaker:
+        return configured_speaker
+
+    if configured_speaker:
+        logger.warning(
+            "[CONFIG] tts_speaker=%r does not match language_code=%s; using %s",
+            configured_speaker,
+            language_code,
+            expected_speaker,
+        )
+    return expected_speaker
+
+
 def _coerce_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -340,13 +407,14 @@ def _coerce_bool(value: Any) -> bool:
 def _build_runtime_language_config(
     language_code: str,
     mixed_language_enabled: bool,
+    tts_speaker: str,
 ) -> RuntimeLanguageConfig:
     primary_language_code = _normalize_language_code(language_code)
     return RuntimeLanguageConfig(
         primary_language_code=primary_language_code,
         stt_language="unknown" if mixed_language_enabled else primary_language_code,
         tts_language_code=primary_language_code,
-        tts_speaker=SARVAM_SPEAKERS_BY_LANGUAGE[primary_language_code],
+        tts_speaker=_normalize_tts_speaker(tts_speaker, primary_language_code),
         mixed_language_enabled=mixed_language_enabled,
     )
 
@@ -383,7 +451,36 @@ def _parse_json_metadata(raw_metadata: str | None) -> dict[str, Any]:
     return parsed
 
 
-def _find_phone_number(metadata: dict[str, Any], ctx: JobContext) -> str | None:
+async def _wait_for_initial_participant(ctx: JobContext) -> Any | None:
+    if ctx.room.remote_participants:
+        return next(iter(ctx.room.remote_participants.values()))
+
+    wait_for_participant = getattr(ctx, "wait_for_participant", None)
+    if not callable(wait_for_participant):
+        await asyncio.sleep(0.25)
+        return next(iter(ctx.room.remote_participants.values()), None)
+
+    try:
+        return await asyncio.wait_for(wait_for_participant(), timeout=INITIAL_PARTICIPANT_WAIT_SECONDS)
+    except asyncio.TimeoutError:
+        log_event(
+            logging.WARNING,
+            "livekit_initial_participant_timeout",
+            room=ctx.room.name,
+            timeout_seconds=INITIAL_PARTICIPANT_WAIT_SECONDS,
+        )
+    except Exception as exc:
+        log_event(
+            logging.WARNING,
+            "livekit_initial_participant_wait_failed",
+            room=ctx.room.name,
+            error_type=type(exc).__name__,
+            error=_redact_secret_values(str(exc)),
+        )
+    return next(iter(ctx.room.remote_participants.values()), None)
+
+
+def _participant_phone_number(participant: Any) -> str | None:
     metadata_candidates = (
         "phone_number",
         "phoneNumber",
@@ -391,25 +488,52 @@ def _find_phone_number(metadata: dict[str, Any], ctx: JobContext) -> str | None:
         "callerPhone",
         "from",
         "sip.phoneNumber",
+        "sip.phone_number",
+        "sip.trunkPhoneNumber",
+    )
+    attrs = getattr(participant, "attributes", None) or {}
+    for key in metadata_candidates:
+        value = _metadata_lookup(attrs, key)
+        if value:
+            return str(value)
+
+    identity = getattr(participant, "identity", None)
+    return str(identity) if identity else None
+
+
+def _find_phone_number(metadata: dict[str, Any], ctx: JobContext, initial_participant: Any | None = None) -> str | None:
+    metadata_candidates = (
+        "phone_number",
+        "phoneNumber",
+        "caller_phone",
+        "callerPhone",
+        "from",
+        "sip.phoneNumber",
+        "sip.phone_number",
+        "sip.trunkPhoneNumber",
     )
     for key in metadata_candidates:
         value = _metadata_lookup(metadata, key)
         if value:
             return str(value)
 
+    if initial_participant:
+        participant_phone = _participant_phone_number(initial_participant)
+        if participant_phone:
+            return participant_phone
+
     for participant in ctx.room.remote_participants.values():
-        attrs = participant.attributes or {}
-        for key in metadata_candidates:
-            value = _metadata_lookup(attrs, key)
-            if value:
-                return str(value)
-        if participant.identity:
-            return participant.identity
+        participant_phone = _participant_phone_number(participant)
+        if participant_phone:
+            return participant_phone
 
     return None
 
 
 def _metadata_lookup(source: dict[str, Any], key: str) -> Any:
+    if not isinstance(source, dict):
+        return None
+
     if key in source:
         return source[key]
 
@@ -423,6 +547,7 @@ def _metadata_lookup(source: dict[str, Any], key: str) -> Any:
 
 def _coerce_agent_config(row: dict[str, Any] | None) -> AgentConfig:
     source = row or DEFAULT_AGENT_CONFIG
+    language_code = _normalize_language_code(source.get("language_code"))
     return AgentConfig(
         business_name=str(source.get("business_name") or DEFAULT_AGENT_CONFIG["business_name"]),
         business_phone=str(source.get("business_phone") or DEFAULT_AGENT_CONFIG["business_phone"]),
@@ -433,7 +558,8 @@ def _coerce_agent_config(row: dict[str, Any] | None) -> AgentConfig:
         ),
         system_prompt=str(source.get("system_prompt") or DEFAULT_AGENT_CONFIG["system_prompt"]),
         vad_threshold=_normalize_vad_threshold(source.get("vad_threshold")),
-        language_code=_normalize_language_code(source.get("language_code")),
+        language_code=language_code,
+        tts_speaker=_normalize_tts_speaker(source.get("tts_speaker"), language_code),
         mixed_language_enabled=_coerce_bool(
             source.get("mixed_language_enabled")
             if "mixed_language_enabled" in source
@@ -456,6 +582,7 @@ def fetch_active_agent_config() -> AgentConfig:
                 system_prompt,
                 vad_threshold,
                 language_code,
+                tts_speaker,
                 mixed_language_enabled,
                 updated_at
             from agent_config
@@ -473,9 +600,10 @@ def fetch_active_agent_config() -> AgentConfig:
 
     config = _coerce_agent_config(row)
     logger.info(
-        "[CONFIG] Loaded active agent_config updated_at=%s language=%s mixed_language=%s",
+        "[CONFIG] Loaded active agent_config updated_at=%s language=%s speaker=%s mixed_language=%s",
         row.get("updated_at"),
         config.language_code,
+        config.tts_speaker,
         config.mixed_language_enabled,
     )
     return config
@@ -513,8 +641,70 @@ def create_call_log(caller_phone: str | None, config: AgentConfig) -> tuple[str 
 
     call_id = str(row["id"]) if row and row.get("id") else None
     if call_id:
-        logger.info("[DB] Created call_logs row id=%s", call_id)
+        log_event(
+            logging.INFO,
+            "call_log_created",
+            call_id=call_id,
+            status="connected",
+            outcome="in_progress",
+            phone_last4=phone_number[-4:] if phone_number != "unknown" else None,
+            language_code=config.language_code,
+            mixed_language_enabled=config.mixed_language_enabled,
+        )
     return call_id, started_at
+
+
+def create_failed_inbound_session_log(
+    *,
+    room_name: str | None,
+    error_type: str,
+    error_message: str,
+) -> str | None:
+    started_at = datetime.now(timezone.utc)
+    summary = f"LiveKit room connection failed before agent start: {error_type}: {error_message}"
+    try:
+        row = db.execute_returning_one(
+            """
+            insert into call_logs (
+                phone_number,
+                start_time,
+                duration,
+                status,
+                outcome,
+                summary
+            )
+            values (%s, %s, %s, %s, %s, %s)
+            returning id
+            """,
+            (
+                "unknown",
+                started_at,
+                0,
+                "failed",
+                "livekit_connect_failed",
+                summary[:500],
+            ),
+        )
+    except Exception as exc:
+        log_event(
+            logging.ERROR,
+            "failed_inbound_session_log_create_failed",
+            room=room_name,
+            error_type=type(exc).__name__,
+            error=_redact_secret_values(str(exc)),
+        )
+        return None
+
+    call_id = str(row["id"]) if row and row.get("id") else None
+    log_event(
+        logging.ERROR,
+        "failed_inbound_session_logged",
+        call_id=call_id,
+        room=room_name,
+        outcome="livekit_connect_failed",
+        failure_error_type=error_type,
+    )
+    return call_id
 
 
 async def _fetch_confirmed_booking(call_id: str) -> dict[str, Any] | None:
@@ -541,7 +731,7 @@ async def _claim_unsent_confirmed_booking_for_sms(call_id: str) -> dict[str, Any
             where call_id = %s
               and status = %s
               and sms_sent = false
-            returning call_id, appointment_time, status, sms_sent
+            returning call_id, appointment_time, status, sms_sent, caller_name, caller_phone
             """,
             (call_id, "confirmed"),
         )
@@ -596,7 +786,7 @@ async def complete_call_log(
                 summary = %s
             where id = %s
             """,
-            (duration, status, final_outcome, _build_call_summary(final_outcome, duration), call_id),
+            (duration, status, final_outcome, _build_call_summary(final_outcome, duration, status=status), call_id),
         )
 
     try:
@@ -636,9 +826,6 @@ async def send_post_call_booking_sms(
     if not call_id:
         logger.info("[SMS] No call_id available; skipping post-call SMS check")
         return
-    if not caller_phone:
-        logger.info("[SMS] No caller phone available; skipping post-call SMS check")
-        return
 
     try:
         booking = await _claim_unsent_confirmed_booking_for_sms(call_id)
@@ -650,8 +837,21 @@ async def send_post_call_booking_sms(
         logger.info("[SMS] No unsent confirmed booking for call_id=%s; SMS skipped", call_id)
         return
 
+    sms_phone = str(booking.get("caller_phone") or caller_phone or "").strip()
+    if not sms_phone:
+        logger.error("[SMS] Confirmed booking has no phone number; SMS skipped call_id=%s", call_id)
+        await record_notification_event(
+            call_id,
+            SmsSendResult(sent=False, error_message="Confirmed booking has no phone number"),
+        )
+        try:
+            await _release_booking_sms_claim(call_id)
+        except Exception as exc:
+            logger.error("[SMS] Failed to release booking SMS claim for call_id=%s: %s", call_id, exc)
+        return
+
     result = await send_booking_sms_with_result(
-        caller_phone,
+        sms_phone,
         booking,
         business_name=business_name,
         callback_number=business_phone,
@@ -728,14 +928,23 @@ async def finalize_call(
             business_phone=business_phone,
         )
     finally:
+        write_runtime_status("call_finalized", call_id=call_id)
         log_event(logging.INFO, "call_shutdown_finalize_finished", call_id=call_id)
 
 
-def _build_call_summary(outcome: str | None, duration: int) -> str:
+def _build_call_summary(outcome: str | None, duration: int, *, status: str = "completed") -> str:
+    normalized_status = (status or "").lower()
+
     if outcome == "booked":
         return f"Booked appointment during a {duration}s call."
     if outcome == "agent_start_failed":
         return "Agent failed to start; call did not complete normally."
+    if outcome == "livekit_connect_failed":
+        return "LiveKit room connection failed before the agent could start."
+    if normalized_status in {"failed", "missed", "error"}:
+        return f"Call ended with status {normalized_status} after {duration}s."
+    if duration < 5:
+        return f"Call ended before a full conversation could be completed ({duration}s)."
     return f"Call completed without a confirmed booking in {duration}s."
 
 
@@ -794,23 +1003,41 @@ async def entrypoint(ctx: JobContext) -> None:
     try:
         await ctx.connect()
     except Exception as exc:
+        room_name = getattr(getattr(ctx, "room", None), "name", None)
+        redacted_error = _redact_secret_values(str(exc))
+        failed_call_id = create_failed_inbound_session_log(
+            room_name=room_name,
+            error_type=type(exc).__name__,
+            error_message=redacted_error,
+        )
+        write_runtime_status(
+            "livekit_connect_failed",
+            call_id=failed_call_id,
+            room=room_name,
+            error_type=type(exc).__name__,
+            error=redacted_error,
+        )
         log_event(
             logging.ERROR,
             "livekit_room_connect_failed",
+            call_id=failed_call_id,
+            room=room_name,
             error_type=type(exc).__name__,
-            error=_redact_secret_values(str(exc)),
+            error=redacted_error,
+            action="Check LIVEKIT_URL/API credentials, LiveKit dispatch rule, SIP trunk routing, and room permissions.",
         )
         return
 
+    write_runtime_status("room_connected", room=ctx.room.name)
     log_event(logging.INFO, "livekit_room_connected", room=ctx.room.name)
 
     # SIP metadata can arrive on the room, job dispatch metadata, or participant attributes.
-    await asyncio.sleep(0.25)
+    initial_participant = await _wait_for_initial_participant(ctx)
     room_metadata = _parse_json_metadata(getattr(ctx.room, "metadata", None))
-    job_metadata = _parse_json_metadata(getattr(ctx.job, "metadata", None))
+    job_metadata = _parse_json_metadata(getattr(getattr(ctx, "job", None), "metadata", None))
     metadata = {**room_metadata, **job_metadata}
 
-    caller_phone = _find_phone_number(metadata, ctx)
+    caller_phone = _find_phone_number(metadata, ctx, initial_participant)
     if caller_phone:
         log_event(logging.INFO, "caller_identity_detected", room=ctx.room.name, phone_last4=caller_phone[-4:])
     else:
@@ -827,6 +1054,7 @@ async def entrypoint(ctx: JobContext) -> None:
         booking_instructions=config.booking_instructions,
         vad_threshold=config.vad_threshold,
         language_code=config.language_code,
+        tts_speaker=config.tts_speaker,
         mixed_language_enabled=config.mixed_language_enabled,
         call_id=call_id,
     )
@@ -834,13 +1062,21 @@ async def entrypoint(ctx: JobContext) -> None:
     try:
         await agent.start(ctx)
     except Exception as exc:
+        redacted_error = _redact_secret_values(str(exc))
+        write_runtime_status(
+            "agent_start_failed",
+            call_id=call_id,
+            room=ctx.room.name,
+            error_type=type(exc).__name__,
+            error=redacted_error,
+        )
         log_event(
             logging.ERROR,
             "agent_pipeline_start_failed",
             call_id=call_id,
             room=ctx.room.name,
             error_type=type(exc).__name__,
-            error=_redact_secret_values(str(exc)),
+            error=redacted_error,
         )
         await complete_call_log(
             call_id,
@@ -850,6 +1086,13 @@ async def entrypoint(ctx: JobContext) -> None:
         )
         return
 
+    write_runtime_status(
+        "call_active",
+        call_id=call_id,
+        room=ctx.room.name,
+        language_code=config.language_code,
+        mixed_language_enabled=config.mixed_language_enabled,
+    )
     ctx.add_shutdown_callback(
         lambda: finalize_call(
             call_id,

@@ -1,403 +1,257 @@
-# RUNBOOK.md — Launch Validation and Operations
+# RUNBOOK.md — Launch Validation & Operations
 
-This runbook is for the operator or engineer launching and maintaining the inbound AI receptionist in production.
-
-The goal is simple: deploy one container on Easypanel, verify the voice agent and dashboard, and recover safely if anything fails.
-
----
-
-## 1. Launch Rule
-
-Do not launch production traffic until every required launch checklist item is marked pass.
-
-If a required item fails:
-
-1. Stop the launch.
-2. Keep the previous deployment serving traffic.
-3. Fix the failed item.
-4. Re-run the failed item and every dependent item.
+> **Subordinate to:** `/docs/PLAN.md`
+> **Scope:** Part 15 launch validation, Easypanel deployment, rollback, backup, and post-launch checks.
 
 ---
 
-## 2. Production Environment Checklist
+## 1. Production Launch Gate
 
-Set these values in Easypanel environment variables before deployment:
+Do not send production traffic to the DID until every item below is marked pass.
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `DATABASE_URL` | Yes | PostgreSQL persistence |
-| `OPENAI_API_KEY` | Yes | LLM responses |
-| `LIVEKIT_URL` | Yes | LiveKit connection |
-| `LIVEKIT_API_KEY` | Yes | LiveKit auth |
-| `LIVEKIT_API_SECRET` | Yes | LiveKit auth |
-| `SARVAM_AI_API_KEY` | Yes | Sarvam STT/TTS |
-| `CALCOM_API_KEY` | Yes | Booking API |
-| `CALCOM_EVENT_TYPE_ID` | Yes | Booking event type |
-| `FAST2SMS_API_KEY` | Yes | Booking confirmation SMS |
-| `DASHBOARD_PASSWORD` | Yes | Dashboard access |
-| `DASHBOARD_SESSION_MAX_AGE` | No | Session duration in seconds (default: 43200 = 12 hours) |
-| `ALLOW_FULL_VAD_RANGE` | No | Emergency VAD override; allows 0.0-1.0 runtime clamp instead of the practical 0.3-0.7 range |
-
-Rules:
-
-- Use the internal PostgreSQL service hostname in `DATABASE_URL`.
-- Percent-encode special characters in database passwords.
-- Do not expose PostgreSQL publicly.
-- Do not add `NEXT_PUBLIC_` to secrets.
-- Leave `ALLOW_FULL_VAD_RANGE` unset unless debugging a known VAD issue during supervised testing.
-- Store a separate offline copy of production env values in the operator password manager.
+| Check | Pass/Fail | Evidence |
+|---|---|---|
+| Container image builds successfully |  |  |
+| Easypanel service starts one container |  |  |
+| `/api/health` returns HTTP 200 |  |  |
+| Dashboard redirects unauthenticated users to `/login` |  |  |
+| Dashboard login works with `DASHBOARD_PASSWORD` |  |  |
+| Agent Config save works |  |  |
+| New call uses latest greeting and language config |  |  |
+| Inbound DID reaches LiveKit and starts `inbound-voice-agent` |  |  |
+| Call creates a `call_logs` row |  |  |
+| Transcript turns are saved in `transcripts` |  |  |
+| Confirmed booking creates/updates one `bookings` row |  |  |
+| Fast2SMS sends exactly one booking confirmation SMS |  |  |
+| SMS attempt is recorded in `notification_events` |  |  |
+| CRM search finds the caller by phone/name |  |  |
+| Calendar page shows the confirmed booking |  |  |
+| Container restart preserves DB data and resumes service |  |  |
+| Rollback procedure has been tested |  |  |
+| PostgreSQL backup has been taken and restore path is known |  |  |
 
 ---
 
-## 3. Deployment SOP
+## 2. Required Environment Variables
 
-1. Confirm PostgreSQL is running in Easypanel.
-2. Confirm all required environment variables are present.
-3. Deploy the latest image or trigger Easypanel rebuild from the production branch.
-4. Wait for the container to start.
-5. Open container logs.
-6. Confirm database initialization completed.
-7. Confirm Supervisor started both processes.
-8. Confirm the voice worker reports startup validation success.
-9. Confirm the dashboard is listening on port `3000`.
-10. Check `/api/health`.
+Configure these in Easypanel. Do not commit production values.
 
-Expected health result:
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Easypanel PostgreSQL internal connection URL |
+| `OPENAI_API_KEY` | GPT-4o reasoning |
+| `LIVEKIT_URL` | LiveKit Cloud WebSocket URL |
+| `LIVEKIT_API_KEY` | LiveKit worker authentication |
+| `LIVEKIT_API_SECRET` | LiveKit worker authentication |
+| `SARVAM_AI_API_KEY` or `SARVAM_API_KEY` | Sarvam STT/TTS |
+| `CALCOM_API_KEY` | Cal.com booking |
+| `CALCOM_EVENT_TYPE_ID` or `CAL_EVENT_TYPE_ID` | Cal.com event type |
+| `FAST2SMS_API_KEY` | Booking confirmation SMS |
+| `DASHBOARD_PASSWORD` | Operator dashboard login |
+| `DASHBOARD_SESSION_MAX_AGE` | Optional session lifetime in seconds |
+| `AGENT_STATUS_PATH` | Optional health status file path; default `/tmp/inbound-agent-status.json` |
 
-```json
-{
-  "status": "healthy",
-  "checks": {
-    "app": "ok",
-    "database": "ok",
-    "schema": "ok",
-    "databaseUrl": "ok",
-    "openaiApiKey": "ok",
-    "livekitUrl": "ok",
-    "livekitApiKey": "ok",
-    "livekitApiSecret": "ok",
-    "sarvamApiKey": "ok",
-    "calcomApiKey": "ok",
-    "calcomEventTypeId": "ok",
-    "fast2smsApiKey": "ok",
-    "dashboardPassword": "ok"
-  }
-}
+If the database password contains `@`, percent-encode it as `%40` in `DATABASE_URL`.
+
+---
+
+## 3. Easypanel Deployment Steps
+
+1. Create or select the Easypanel project for the clinic.
+2. Add a PostgreSQL service in the same project.
+3. Copy the internal PostgreSQL connection URL into `DATABASE_URL`.
+4. Add the remaining required environment variables from section 2.
+5. Configure the application service to build from this repository's `Dockerfile`.
+6. Expose public HTTPS traffic to container port `3000`.
+7. Keep the service as a single container; Supervisor starts the Python worker and Next.js dashboard.
+8. Deploy the service.
+9. Watch logs until `Initialized database schema` appears and Supervisor starts both programs.
+10. Open `https://<domain>/api/health` and confirm it returns `status: "healthy"`.
+
+The Docker healthcheck already calls `http://127.0.0.1:3000/api/health`.
+
+---
+
+## 4. Automated Launch Validation
+
+After deployment, run the validator from inside the container or from any environment with the same env vars.
+
+```bash
+python launch_validate.py --base-url https://<domain>
+```
+
+For JSON output:
+
+```bash
+python launch_validate.py --base-url https://<domain> --json
+```
+
+For database and environment checks only:
+
+```bash
+python launch_validate.py --skip-http
+```
+
+Expected pass checks:
+
+| Check | What it proves |
+|---|---|
+| `environment` | Required launch env vars are present and structurally valid |
+| `database_schema` | PostgreSQL has all required tables, columns, and default `agent_config` |
+| `health_endpoint` | Public health endpoint reports healthy runtime |
+| `login_page` | Dashboard login page is reachable |
+| `dashboard_auth` | Dashboard is not public without authentication |
+
+---
+
+## 5. Manual End-to-End Validation
+
+### 5.1 Dashboard Login
+
+1. Open `https://<domain>/dashboard`.
+2. Confirm unauthenticated access redirects to `/login`.
+3. Log in with `DASHBOARD_PASSWORD`.
+4. Confirm Dashboard, CRM, Calendar, Agent Config, and Business pages load.
+
+### 5.2 Agent Config Change
+
+1. Open Agent Config.
+2. Change the greeting to a launch-test phrase.
+3. Select `en-IN`, `hi-IN`, or `kn-IN`.
+4. Save.
+5. Confirm the save succeeds and a new call uses the updated greeting and selected voice language.
+6. Restore the production greeting before launch.
+
+### 5.3 Inbound Call
+
+1. Place a test call to the production DID.
+2. Confirm the call reaches LiveKit and the agent answers.
+3. Verify logs include `livekit_room_connected`, `call_log_created`, and `call_active`.
+4. End the call.
+5. Confirm CRM shows the call with correct phone number, duration, language, status, and transcript.
+
+### 5.4 Booking
+
+1. Place a test call.
+2. Ask for an appointment.
+3. Give name, phone, and exact appointment time.
+4. Confirm details verbally when the agent repeats them.
+5. Confirm the agent says the filler phrase before booking.
+6. Confirm Calendar shows the booking.
+7. Confirm the booking is linked to the call in CRM.
+
+### 5.5 SMS
+
+1. Use a real Indian mobile number during the booking test.
+2. Confirm exactly one Fast2SMS message is received.
+3. Confirm `bookings.sms_sent=true`.
+4. Confirm `notification_events` has one `booking_confirmation` row for the call.
+5. If SMS fails, review `notification_events.error_message` and Fast2SMS account status.
+
+### 5.6 Restart
+
+1. Restart the Easypanel application service.
+2. Confirm the container becomes healthy.
+3. Confirm `/api/health` returns HTTP 200.
+4. Confirm existing CRM and Calendar data remains visible.
+5. Place another short inbound call to confirm the worker resumed.
+
+---
+
+## 6. Post-Launch Monitoring
+
+Check these during the first production day, then daily.
+
+| Signal | Where | Healthy value |
+|---|---|---|
+| Container health | Easypanel | Healthy |
+| `/api/health` | Browser or curl | HTTP 200, `status: "healthy"` |
+| Supervisor restarts | Easypanel logs | No restart loop |
+| Agent startup | Logs | `startup_validation_passed` |
+| LiveKit connection | Logs | No repeated `livekit_room_connect_failed` |
+| Booking failures | Logs / CRM | Low or explained by caller/provider |
+| SMS failures | `notification_events` | None or provider-explained |
+| Dashboard metrics | Dashboard | Matches DB rows |
+| Call latency | Test calls | No dead air longer than about 2 seconds |
+
+Useful SQL:
+
+```sql
+select status, outcome, count(*)
+from call_logs
+where start_time >= now() - interval '24 hours'
+group by status, outcome
+order by count(*) desc;
+```
+
+```sql
+select status, count(*)
+from notification_events
+where created_at >= now() - interval '24 hours'
+group by status;
+```
+
+```sql
+select appointment_time, status, sms_sent, caller_name, caller_phone
+from bookings
+order by appointment_time desc
+limit 20;
 ```
 
 ---
 
-## 4. Launch Validation Checklist
+## 7. Rollback Procedure
 
-Use this table during launch. Record pass/fail and notes.
+Rollback should be tested before production traffic.
 
-| Area | Required check | Pass/Fail | Notes |
-|------|----------------|-----------|-------|
-| Container | Docker image builds successfully |  |  |
-| Container | Container starts without restart loop |  |  |
-| Supervisor | Voice worker starts |  |  |
-| Supervisor | Dashboard starts |  |  |
-| Health | `/api/health` returns `200` |  |  |
-| Health | `/api/health` shows every required env group as `ok` |  |  |
-| Health | `/api/health` shows required PostgreSQL schema as `ok` |  |  |
-| Auth | Dashboard login works with production password |  |  |
-| Config | Agent config saves and persists after refresh |  |  |
-| English | English-only inbound call works |  |  |
-| Hindi | Hindi-only inbound call works |  |  |
-| Kannada | Kannada-only inbound call works |  |  |
-| Mixed | Mixed-language inbound call works naturally |  |  |
-| Runtime config | New call uses latest language config |  |  |
-| Booking | Caller can book an appointment |  |  |
-| Booking | Booking is persisted in PostgreSQL |  |  |
-| SMS | Booking SMS sends with production credentials |  |  |
-| Audit | SMS event appears in notification audit storage |  |  |
-| Transcript | Full transcript is saved |  |  |
-| CRM | Latest call appears in CRM |  |  |
-| CRM | Transcript detail page is readable |  |  |
-| CRM | Booking, language, repeat-caller, phone/name, and date filters work |  |  |
-| Dashboard | Metrics match database records |  |  |
-| Dashboard | Latest confirmed bookings section matches PostgreSQL |  |  |
-| Analytics | Language usage counts are plausible |  |  |
-| Restart | Container restart recovers cleanly |  |  |
-| Shutdown | Active call finalization survives graceful restart |  |  |
-| Latency | Greeting and replies feel responsive |  |  |
-| Latency | Booking filler prevents awkward silence |  |  |
+1. Identify the last known-good image or git commit.
+2. In Easypanel, redeploy that image/commit without changing PostgreSQL.
+3. Keep the same environment variables and `DATABASE_URL`.
+4. Wait for the container healthcheck to pass.
+5. Run:
 
-Launch only when every required row passes.
+```bash
+python launch_validate.py --base-url https://<domain>
+```
+
+6. Place one short inbound call.
+7. Confirm CRM receives the call record.
+
+Do not drop or recreate PostgreSQL during rollback unless a verified database restore is intentionally being performed.
 
 ---
 
-## 5. Inbound Call Validation Script
+## 8. Backup And Restore
 
-Run these calls against the production LiveKit/SIP number.
+Before launch:
 
-### English-only
+1. Take a PostgreSQL backup from Easypanel.
+2. Record where the backup is stored.
+3. Confirm the restore workflow on a non-production database if possible.
 
-1. Set primary language to English.
-2. Disable mixed language.
-3. Call the number.
-4. Ask a normal booking question in English.
-5. Confirm the assistant responds in English.
-6. Complete a booking.
-7. Verify transcript, booking, and SMS audit.
+Minimum backup schedule after launch:
 
-### Hindi-only
+| Data | Frequency |
+|---|---|
+| PostgreSQL database | Daily |
+| Easypanel env var snapshot | After every env change |
+| Docker image / git commit reference | Every deploy |
 
-1. Set primary language to Hindi.
-2. Disable mixed language.
-3. Call the number.
-4. Speak in Hindi.
-5. Confirm the assistant responds in Hindi.
-6. Complete or intentionally decline booking.
-7. Verify transcript and call outcome.
+Restore validation:
 
-### Kannada-only
-
-1. Set primary language to Kannada.
-2. Disable mixed language.
-3. Call the number.
-4. Speak in Kannada.
-5. Confirm the assistant responds in Kannada.
-6. Verify transcript and call outcome.
-
-### Mixed language
-
-1. Enable mixed language.
-2. Set the expected primary language.
-3. Call the number.
-4. Mix English with Hindi or Kannada naturally.
-5. Confirm the assistant adapts softly without switching languages every sentence.
-6. Complete a short booking flow.
-7. Verify transcript, booking, and SMS audit.
+1. Restore backup to a separate PostgreSQL service.
+2. Point a staging copy of the app to the restored `DATABASE_URL`.
+3. Run `python launch_validate.py --skip-http`.
+4. Check CRM and Calendar data manually.
 
 ---
 
-## 6. Booking and SMS Validation
-
-Required production booking checks:
-
-1. Ask for a valid appointment slot.
-2. Confirm caller name, phone number, date, and time.
-3. Confirm the assistant says a short filler before booking.
-4. Confirm the booking is created.
-5. Confirm the booking appears in the dashboard.
-6. Confirm SMS is sent.
-7. Confirm notification audit storage has one `booking_confirmation` event.
-
-Failure checks:
-
-1. Temporarily test an unavailable slot or invalid input.
-2. Confirm the assistant gives a concise fallback.
-3. Confirm no false booking is recorded.
-4. Confirm logs show the provider failure without exposing secrets.
-
----
-
-## 7. Dashboard and CRM Validation
-
-Verify these operator workflows:
-
-1. Dashboard opens after login.
-2. Total calls match recent call records.
-3. Booking conversion rate matches booked outcomes.
-4. Average duration is plausible.
-5. Missed or failed calls are visible.
-6. Booked appointments are visible.
-7. Repeat callers are surfaced.
-8. Language usage is visible.
-9. Peak call hour analytics are plausible.
-10. CRM search works by phone number.
-11. CRM search works by caller name.
-12. CRM date filtering works.
-13. CRM pagination works.
-14. Transcript detail page opens.
-15. Full transcript is readable.
-16. Recording links open when present.
-17. Sign out button logs out and redirects to login.
-
----
-
-## 8. Latency Validation
-
-Use live calls, not only logs.
-
-Pass criteria:
-
-- Greeting starts without a long pause.
-- The assistant asks one question at a time.
-- Replies are short and receptionist-like.
-- Caller interruption stops or redirects the assistant naturally.
-- Booking filler is short and appears before the booking operation.
-- No extra translation or routing delay is noticeable.
-- Mixed-language handling remains conversational, not mechanical.
-
-Fail criteria:
-
-- Long silence before first response.
-- Long silence during booking.
-- Verbose confirmations.
-- Assistant keeps talking over the caller.
-- Language switching feels aggressive or unnatural.
-
----
-
-## 9. Restart and Shutdown SOP
-
-Use graceful restart for normal deploys.
-
-1. Avoid restarting during an active production call when possible.
-2. Trigger redeploy or restart in Easypanel.
-3. Watch logs for shutdown finalization events.
-4. Confirm the container exits cleanly.
-5. Confirm the replacement container becomes healthy.
-6. Place a test call.
-7. Verify call log and transcript persistence.
-
-If a restart happens during a live call, verify:
-
-- call log status is no longer stuck as `in_progress`;
-- transcript turns before shutdown are present;
-- booking record is either completed or absent, never partially misleading;
-- SMS audit exists if SMS was attempted.
-
----
-
-## 10. Rollback SOP
-
-Rollback is deployment-first. The database schema is additive, so normal rollback does not require manual schema reversal.
-
-1. In Easypanel, redeploy the previous known-good image or commit.
-2. Keep the same PostgreSQL database.
-3. Keep the same environment variables.
-4. Wait for `/api/health` to return healthy.
-5. Run one short inbound call test.
-6. Verify dashboard login.
-7. Verify CRM loads recent calls.
-
-Do not manually delete additive columns or audit tables during rollback. Old code ignores fields it does not use.
-
----
-
-## 11. Broken Deploy Recovery
-
-If the container fails to start:
-
-1. Check Easypanel logs.
-2. Look for missing environment variable messages.
-3. Check database initialization errors.
-4. Check whether PostgreSQL is reachable from the app container.
-5. Fix env or database connectivity.
-6. Redeploy.
-
-If `/api/health` returns `503`:
-
-1. Read the `checks` object.
-2. If any env group is `missing`, set the corresponding Easypanel environment variable.
-3. If `calcomEventTypeId` is `failed`, verify the value is numeric.
-4. If `database` failed, verify `DATABASE_URL` and PostgreSQL health.
-5. If `schema` failed, run database initialization or redeploy so `init_db.py` can apply `schema.sql`.
-6. Redeploy or restart after fixing env or database state.
-
-If inbound calls fail:
-
-1. Verify LiveKit env values.
-2. Verify the worker startup logs.
-3. Verify SIP trunk routing in LiveKit.
-4. Make a test call.
-
-If bookings fail:
-
-1. Verify Cal.com API key.
-2. Verify event type ID.
-3. Verify the requested slot is valid.
-4. Review booking failure logs.
-
-If SMS fails:
-
-1. Verify Fast2SMS API key.
-2. Check notification audit storage for failed events.
-3. Review provider response text.
-4. Do not retry manually until confirming whether the provider sent the message.
-
----
-
-## 12. Backup SOP
-
-Minimum backup strategy:
-
-1. Enable Easypanel PostgreSQL backups if available.
-2. Keep at least daily database backups.
-3. Keep at least seven days of backups.
-4. Export or record production environment variables in a password manager after every change.
-5. Record the deployed image tag or commit for every launch.
-6. Before high-risk changes, take a manual PostgreSQL backup.
-
-Restore test:
-
-1. Restore a backup into a non-production database.
-2. Point a staging deployment at the restored database.
-3. Confirm dashboard loads calls, transcripts, bookings, and agent config.
-
----
-
-## 13. Post-Launch Monitoring
-
-For the first production day, check every hour:
-
-- `/api/health`
-- container restart count
-- voice worker logs
-- dashboard login
-- latest call records
-- transcript persistence
-- booking success rate
-- SMS audit events
-- latency complaints from operators
-
-For normal operation, check daily:
-
-- failed calls
-- failed SMS events
-- missed booking opportunities
-- unusually long call durations
-- repeated health failures
-- PostgreSQL backup freshness
-
----
-
-## 14. Known Issues and Workarounds
+## 9. Known Issues And Workarounds
 
 | Issue | Impact | Workaround |
-|-------|--------|------------|
-| Sarvam TTS cold-start latency on first call after container start | First caller may hear a ~1s extra pause before the greeting | Place one warm-up call after each deploy or restart |
-| Cal.com API may return 429 under burst booking traffic | Booking fails for that call; caller hears fallback message | The agent retries once naturally on next caller turn; no manual action needed |
-| Fast2SMS delivery receipts are not available via API | `notification_events` records send/fail but not final delivery | Monitor operator feedback for missed SMS; check Fast2SMS dashboard manually |
-| Mixed-language STT uses `language="unknown"` which relies on Sarvam auto-detect | Accuracy may be lower for short utterances in non-primary language | If accuracy is poor, disable mixed-language and set a single primary language |
-| Session token is HMAC-based, not expiring on password change | If `DASHBOARD_PASSWORD` is rotated, old sessions remain valid until cookie expires | Restart the container after password rotation to invalidate all sessions |
-| Transcript persistence is fire-and-forget | A database hiccup during a call may lose individual transcript turns | `log_transcript_turn` errors are logged; check voice worker stderr for `[DB] Failed to log transcript turn` |
-
----
-
-## 15. Go / No-Go Criteria
-
-Go only if:
-
-- health endpoint is healthy;
-- dashboard login works;
-- all four language modes pass live-call validation;
-- booking and SMS pass with production credentials;
-- transcripts and CRM records are visible;
-- restart recovery passes;
-- rollback target is known;
-- database backup strategy is active.
-
-No-go if:
-
-- Docker image cannot build in the deployment environment;
-- startup validation fails;
-- health endpoint stays unhealthy;
-- production calls cannot connect;
-- booking persistence fails;
-- SMS provider cannot be validated;
-- dashboard cannot authenticate;
-- rollback target is unknown.
+|---|---|---|
+| `recording_url` exists but is not populated | CRM cannot show recordings yet | Use provider-side Vobiz/LiveKit recordings until recording URL capture is implemented |
+| Python DB helper opens a connection per query | Acceptable at current low scale; less efficient at high call volume | Add pooling only when production traffic requires it |
+| Mixed-language mode uses one TTS language per call | Agent may not switch spoken output every sentence | Set the primary language to the business's preferred output language |
+| Cal.com or Fast2SMS outage | Bookings or SMS may fail | Check provider dashboards and `notification_events`; retry caller follow-up manually |
+| Docker build cannot run locally if Docker Desktop is stopped | Local image verification blocked | Start Docker Desktop or build in Easypanel/CI |

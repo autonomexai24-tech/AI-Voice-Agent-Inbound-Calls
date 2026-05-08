@@ -358,17 +358,12 @@ These rules govern how future Codex/CLI/AI work proceeds:
 ```
 /docs/PLAN.md              ← Master source of truth (this file)
 /docs/REVIEW.md            ← Repository snapshot and known issues
-/docs/LOGIC.md             ← Global operating logic and behavioral rules
 /docs/AGENT.md             ← Voice agent runtime behavior
-/docs/DATABASE_POSTGRES.md ← PostgreSQL layer and schema
-/docs/CALL_FLOW.md         ← End-to-end call lifecycle
-/docs/LATENCY.md           ← Latency rules and bottlenecks
-/docs/BOOKING.md           ← Booking behavior and Cal.com integration
-/docs/SMS.md               ← SMS notification behavior
 /docs/FRONTEND.md          ← Dashboard architecture and multi-business structure
 /docs/DEPLOYMENT.md        ← Deployment architecture and production operations
 /docs/SECURITY.md          ← Security architecture and data privacy
-/docs/FINAL_EXECUTION_DEBUGGING.md ← Final Parts 11-15 implementation reality check
+/docs/RUNBOOK.md           ← Deployment runbook and launch checklist (Part 15)
+/docs/BOOKING.md           ← Booking behavior and Cal.com integration
 ```
 
 ### Rules
@@ -442,7 +437,7 @@ Every architecture decision is a cost decision. The platform is designed for Ind
 3. **No vector database** — business context fits in system prompt.
 4. **No multi-agent orchestration** — one LLM call per turn.
 5. **Concise system prompts** — under 300 tokens.
-6. **Short replies** — `max_completion_tokens=160`.
+6. **Short replies** — `max_completion_tokens=150`.
 7. **No GPU dependency** — all inference via API.
 8. **Easypanel simplicity** — no DevOps team needed.
 9. **Raw SQL** — no ORM runtime overhead.

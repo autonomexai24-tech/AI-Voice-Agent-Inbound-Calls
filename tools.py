@@ -16,7 +16,10 @@ logger = logging.getLogger("agent-tools")
 
 _current_call_id: ContextVar[str | None] = ContextVar("current_call_id", default=None)
 _active_call_id: str | None = None
-CALCOM_TIMEOUT = httpx.Timeout(6.0, connect=2.0, read=5.0, write=3.0, pool=2.0)
+BOOKING_PREFLIGHT_FILLER = "One moment while I book that for you."
+BOOKING_LATENCY_WARNING_MS = 2000
+CALCOM_TIMEOUT = httpx.Timeout(4.0, connect=1.0, read=2.5, write=2.0, pool=1.0)
+DEFAULT_CALCOM_API_VERSION = "2026-02-25"
 
 
 def set_booking_call_context(call_id: str | None) -> None:
@@ -46,6 +49,10 @@ def _event_type_id() -> int:
         raise RuntimeError("CALCOM_EVENT_TYPE_ID must be an integer") from exc
 
 
+def _calcom_api_version() -> str:
+    return os.environ.get("CALCOM_API_VERSION", DEFAULT_CALCOM_API_VERSION).strip() or DEFAULT_CALCOM_API_VERSION
+
+
 def _normalize_datetime(date_time: str) -> str:
     value = date_time.strip()
     if not value:
@@ -53,11 +60,20 @@ def _normalize_datetime(date_time: str) -> str:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.isoformat()
+    utc_value = parsed.astimezone(timezone.utc).isoformat()
+    return utc_value.replace("+00:00", "Z")
 
 
 def _clean_phone_number(phone: str) -> str:
     return phone.replace("+", "").replace(" ", "").replace("-", "").strip()
+
+
+def _coerce_confirmation(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "confirmed", "caller confirmed"}
+    return bool(value)
 
 
 def _booking_payload(name: str, phone: str, date_time: str) -> dict[str, Any]:
@@ -73,7 +89,7 @@ def _booking_payload(name: str, phone: str, date_time: str) -> dict[str, Any]:
         "start": _normalize_datetime(date_time),
         "attendee": {
             "name": clean_name,
-            "email": f"{clean_phone or 'caller'}@voiceagent.placeholder",
+            "email": f"{clean_phone or 'caller'}@voice-caller.invalid",
             "phoneNumber": phone.strip(),
             "timeZone": "Asia/Kolkata",
             "language": "en",
@@ -84,18 +100,22 @@ def _booking_payload(name: str, phone: str, date_time: str) -> dict[str, Any]:
     }
 
 
-async def _insert_booking_record(call_id: str, appointment_time: str) -> None:
+async def _insert_booking_record(call_id: str, appointment_time: str, name: str, phone: str) -> None:
+    clean_name = name.strip()
+    clean_phone = phone.strip()
     await asyncio.to_thread(
         lambda: db.execute(
             """
-            insert into bookings (call_id, appointment_time, status, sms_sent)
-            values (%s, %s, %s, %s)
+            insert into bookings (call_id, caller_name, caller_phone, appointment_time, status, sms_sent)
+            values (%s, %s, %s, %s, %s, %s)
             on conflict (call_id) do update
-            set appointment_time = excluded.appointment_time,
+            set caller_name = excluded.caller_name,
+                caller_phone = excluded.caller_phone,
+                appointment_time = excluded.appointment_time,
                 status = excluded.status,
                 sms_sent = excluded.sms_sent
             """,
-            (call_id, appointment_time, "confirmed", False),
+            (call_id, clean_name, clean_phone, appointment_time, "confirmed", False),
         )
     )
 
@@ -131,18 +151,29 @@ async def _persist_booking_caller_details(call_id: str, name: str, phone: str) -
         "Create a Cal.com appointment only after the caller has verbally confirmed "
         "the exact name, phone number, and appointment date/time. Never call this "
         "tool while proposing options or before explicit confirmation. Immediately "
-        'before calling this tool, tell the caller: "One moment while I book that for you."'
+        f'before calling this tool, tell the caller exactly: "{BOOKING_PREFLIGHT_FILLER}" '
+        "Set confirmed_by_caller to true only after the caller explicitly confirms the repeated details."
     )
 )
 async def book_appointment(
     name: Annotated[str, "Confirmed caller name"],
     phone: Annotated[str, "Confirmed caller phone number"],
     date_time: Annotated[str, "Confirmed appointment datetime in ISO 8601 format"],
+    confirmed_by_caller: Annotated[
+        bool,
+        "True only when the caller verbally confirmed the repeated name, phone number, and appointment date/time.",
+    ] = False,
 ) -> str:
     call_id = _current_call_id.get() or _active_call_id
     if not call_id:
         logger.error("[BOOKING] Missing call context; refusing to create booking")
         return "I cannot complete the booking right now because this call is missing booking context."
+
+    if not _coerce_confirmation(confirmed_by_caller):
+        logger.warning("[BOOKING] Refusing booking without explicit caller confirmation call_id=%s", call_id)
+        return (
+            "Before I book it, please confirm the name, phone number, and appointment time once more."
+        )
 
     try:
         payload = _booking_payload(name=name, phone=phone, date_time=date_time)
@@ -153,13 +184,19 @@ async def book_appointment(
 
     try:
         booking_started_at = perf_counter()
+        logger.info(
+            "[BOOKING] Booking tool started call_id=%s spoken_filler_required=%r calcom_timeout_seconds=%s",
+            call_id,
+            BOOKING_PREFLIGHT_FILLER,
+            CALCOM_TIMEOUT,
+        )
         async with httpx.AsyncClient(timeout=CALCOM_TIMEOUT) as client:
             create_started_at = perf_counter()
             response = await client.post(
                 "https://api.cal.com/v2/bookings",
                 headers={
                     "Authorization": f"Bearer {api_key}",
-                    "cal-api-version": "2024-08-13",
+                    "cal-api-version": _calcom_api_version(),
                     "Content-Type": "application/json",
                 },
                 json=payload,
@@ -177,10 +214,12 @@ async def book_appointment(
             return "I could not complete the booking because the calendar service rejected the request."
 
         appointment_time = payload["start"]
-        await _insert_booking_record(call_id=call_id, appointment_time=appointment_time)
+        await _insert_booking_record(call_id=call_id, appointment_time=appointment_time, name=name, phone=phone)
         await _persist_booking_caller_details(call_id=call_id, name=name, phone=phone)
         booking_id = response.json().get("data", {}).get("uid", "confirmed")
         total_ms = round((perf_counter() - booking_started_at) * 1000)
+        if total_ms > BOOKING_LATENCY_WARNING_MS:
+            logger.warning("[BOOKING] Booking exceeded voice latency budget call_id=%s duration_ms=%s", call_id, total_ms)
         logger.info("[BOOKING] Confirmed booking call_id=%s booking_id=%s duration_ms=%s", call_id, booking_id, total_ms)
         return f"Your appointment is confirmed for {appointment_time}. Thank you, {name}."
     except httpx.TimeoutException:

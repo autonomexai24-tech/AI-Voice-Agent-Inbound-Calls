@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
+import { DASHBOARD_AUTH_COOKIE, verifyDashboardSessionToken } from "../../lib/dashboard-auth";
 import { queryPostgres } from "../../lib/postgres-server";
 
 export type AgentConfigActionState = {
@@ -30,6 +32,21 @@ function readVadThreshold(formData: FormData) {
 }
 
 const supportedLanguageCodes = new Set(["en-IN", "hi-IN", "kn-IN"]);
+const ttsSpeakerByLanguage: Record<string, string> = {
+  "en-IN": "amelia",
+  "hi-IN": "kavya",
+  "kn-IN": "kavitha"
+};
+
+async function requireAuthenticatedConfigSave() {
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get(DASHBOARD_AUTH_COOKIE)?.value;
+  const isAuthenticated = await verifyDashboardSessionToken(sessionCookie, process.env.DASHBOARD_PASSWORD);
+
+  if (!isAuthenticated) {
+    throw new Error("Sign in before saving agent configuration.");
+  }
+}
 
 function readLanguageCode(formData: FormData) {
   const value = String(formData.get("languageCode") ?? "").trim();
@@ -45,6 +62,16 @@ function readMixedLanguageEnabled(formData: FormData) {
   return String(formData.get("mixedLanguageEnabled") ?? "").trim() === "on";
 }
 
+function ttsSpeakerForLanguage(languageCode: string) {
+  const speaker = ttsSpeakerByLanguage[languageCode];
+
+  if (!speaker) {
+    throw new Error("Select a supported language.");
+  }
+
+  return speaker;
+}
+
 function readOptionalText(formData: FormData, field: string) {
   return String(formData.get(field) ?? "").trim();
 }
@@ -54,6 +81,8 @@ export async function saveAgentConfig(
   formData: FormData
 ): Promise<AgentConfigActionState> {
   try {
+    await requireAuthenticatedConfigSave();
+
     const id = String(formData.get("id") ?? "").trim();
     const businessName = readRequiredText(formData, "businessName", "Business name");
     const businessPhone = readOptionalText(formData, "businessPhone");
@@ -63,6 +92,7 @@ export async function saveAgentConfig(
     const systemPrompt = readRequiredText(formData, "systemPrompt", "System prompt");
     const vadThreshold = readVadThreshold(formData);
     const languageCode = readLanguageCode(formData);
+    const ttsSpeaker = ttsSpeakerForLanguage(languageCode);
     const mixedLanguageEnabled = readMixedLanguageEnabled(formData);
     const updatedAt = new Date();
 
@@ -78,9 +108,10 @@ export async function saveAgentConfig(
             system_prompt = $6,
             vad_threshold = $7,
             language_code = $8,
-            mixed_language_enabled = $9,
-            updated_at = $10
-        where id = $11
+            tts_speaker = $9,
+            mixed_language_enabled = $10,
+            updated_at = $11
+        where id = $12
         `,
         [
           businessName,
@@ -91,6 +122,7 @@ export async function saveAgentConfig(
           systemPrompt,
           vadThreshold,
           languageCode,
+          ttsSpeaker,
           mixedLanguageEnabled,
           updatedAt,
           id
@@ -108,10 +140,11 @@ export async function saveAgentConfig(
           system_prompt,
           vad_threshold,
           language_code,
+          tts_speaker,
           mixed_language_enabled,
           updated_at
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         `,
         [
           businessName,
@@ -122,6 +155,7 @@ export async function saveAgentConfig(
           systemPrompt,
           vadThreshold,
           languageCode,
+          ttsSpeaker,
           mixedLanguageEnabled,
           updatedAt
         ]

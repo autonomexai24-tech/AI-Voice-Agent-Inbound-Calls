@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCrmCallDetail } from "../../../lib/operations-data";
+import { decodeCallRef, getCrmCallDetail } from "../../../lib/operations-data";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +55,7 @@ function statusClass(status: string) {
 
 export default async function CrmDetailPage({ params }: CrmDetailPageProps) {
   const { callId } = await params;
-  const result = await getCrmCallDetail(callId);
+  const result = await getCrmCallDetail(decodeCallRef(callId));
 
   if (!result.row && !result.error) {
     notFound();

@@ -3,9 +3,37 @@ import { Pool, type QueryResult, type QueryResultRow } from "pg";
 
 let pool: Pool | null = null;
 
+function validateDatabaseUrl(databaseUrl: string) {
+  const authority = databaseUrl.split("://", 2)[1]?.split("/", 1)[0] ?? "";
+  const userinfo = authority.includes("@") ? authority.split("@").slice(0, -1).join("@") : "";
+  if (userinfo.includes("@")) {
+    throw new Error(
+      "DATABASE_URL contains an unescaped @ in the username/password section. Percent-encode @ as %40 in the database password."
+    );
+  }
+
+  let parsed: URL;
+
+  try {
+    parsed = new URL(databaseUrl);
+  } catch {
+    throw new Error("DATABASE_URL must be a full PostgreSQL connection URL.");
+  }
+
+  if (!["postgres:", "postgresql:"].includes(parsed.protocol) || !parsed.hostname) {
+    throw new Error("DATABASE_URL must be a full PostgreSQL connection URL.");
+  }
+}
+
 export function getDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
-  return databaseUrl && databaseUrl.trim() ? databaseUrl.trim() : null;
+  if (!databaseUrl || !databaseUrl.trim()) {
+    return null;
+  }
+
+  const trimmedDatabaseUrl = databaseUrl.trim();
+  validateDatabaseUrl(trimmedDatabaseUrl);
+  return trimmedDatabaseUrl;
 }
 
 export function getPostgresPool() {

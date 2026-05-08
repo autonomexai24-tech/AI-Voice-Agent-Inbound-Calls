@@ -11,11 +11,13 @@ export type AgentConfig = {
   systemPrompt: string;
   vadThreshold: number;
   languageCode: LanguageCode;
+  ttsSpeaker: TtsSpeaker;
   mixedLanguageEnabled: boolean;
   updatedAt: string | null;
 };
 
 export type LanguageCode = "en-IN" | "hi-IN" | "kn-IN";
+export type TtsSpeaker = "amelia" | "kavya" | "kavitha";
 
 export type AgentConfigResult = {
   config: AgentConfig;
@@ -32,11 +34,18 @@ type AgentConfigRow = {
   system_prompt: string | null;
   vad_threshold: number | string | null;
   language_code: string | null;
+  tts_speaker: string | null;
   mixed_language_enabled: boolean | null;
   updated_at: string | null;
 };
 
 const supportedLanguageCodes = new Set<LanguageCode>(["en-IN", "hi-IN", "kn-IN"]);
+const supportedTtsSpeakers = new Set<TtsSpeaker>(["amelia", "kavya", "kavitha"]);
+const ttsSpeakerByLanguage: Record<LanguageCode, TtsSpeaker> = {
+  "en-IN": "amelia",
+  "hi-IN": "kavya",
+  "kn-IN": "kavitha"
+};
 
 export const defaultAgentConfig: AgentConfig = {
   id: null,
@@ -48,12 +57,22 @@ export const defaultAgentConfig: AgentConfig = {
   systemPrompt: "You are a helpful inbound voice agent. Keep responses brief and focused.",
   vadThreshold: 0.5,
   languageCode: "en-IN",
+  ttsSpeaker: "amelia",
   mixedLanguageEnabled: false,
   updatedAt: null
 };
 
 function normalizeLanguageCode(value: string | null): LanguageCode {
   return supportedLanguageCodes.has(value as LanguageCode) ? (value as LanguageCode) : defaultAgentConfig.languageCode;
+}
+
+export function getTtsSpeakerForLanguage(languageCode: LanguageCode): TtsSpeaker {
+  return ttsSpeakerByLanguage[languageCode];
+}
+
+function normalizeTtsSpeaker(value: string | null, languageCode: LanguageCode): TtsSpeaker {
+  const mappedSpeaker = getTtsSpeakerForLanguage(languageCode);
+  return value === mappedSpeaker && supportedTtsSpeakers.has(value as TtsSpeaker) ? (value as TtsSpeaker) : mappedSpeaker;
 }
 
 function normalizeConfig(row: AgentConfigRow | null): AgentConfig {
@@ -73,6 +92,7 @@ function normalizeConfig(row: AgentConfigRow | null): AgentConfig {
     systemPrompt: row.system_prompt || defaultAgentConfig.systemPrompt,
     vadThreshold: Number.isFinite(parsedThreshold) ? parsedThreshold : defaultAgentConfig.vadThreshold,
     languageCode: normalizeLanguageCode(row.language_code),
+    ttsSpeaker: normalizeTtsSpeaker(row.tts_speaker, normalizeLanguageCode(row.language_code)),
     mixedLanguageEnabled: Boolean(row.mixed_language_enabled),
     updatedAt: row.updated_at
   };
@@ -92,6 +112,7 @@ export async function getActiveAgentConfig(): Promise<AgentConfigResult> {
         system_prompt,
         vad_threshold,
         language_code,
+        tts_speaker,
         mixed_language_enabled,
         updated_at
       from agent_config

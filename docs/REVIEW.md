@@ -1,6 +1,6 @@
 # REVIEW.md — Repository Snapshot
 
-> **As of:** 2026-05-08
+> **As of:** 2025-07-03
 > **Scope:** Factual assessment of the current repository state.
 > **Authority:** Subordinate to `/docs/PLAN.md`.
 
@@ -12,48 +12,48 @@
 
 | File | Purpose |
 |------|---------|
-| `agent.py` | LiveKit voice agent entrypoint; call lifecycle; config loading; transcript logging; post-call SMS trigger |
+| `agent.py` | LiveKit voice agent entrypoint; call lifecycle; config loading; multilingual runtime; transcript logging; post-call SMS trigger; notification event recording; env validation |
 | `db.py` | PostgreSQL connection helpers via `psycopg2` with context manager |
-| `tools.py` | Cal.com booking tool; LLM-callable `book_appointment` with verbal confirmation |
-| `notifications.py` | Fast2SMS post-booking SMS sender with duplicate prevention |
-| `archive-docs/legacy-runtime/calendar_tools.py` | Cal.com slot fetching + Google Calendar fallback (legacy, not used in active flow) |
-| `init_db.py` | Schema initialization with 30-retry startup loop |
-| `start.sh` | Container startup: runs init_db.py then launches Supervisor |
+| `tools.py` | Cal.com booking tool; LLM-callable `book_appointment` with verbal confirmation; persists caller name to `call_logs` |
+| `notifications.py` | Fast2SMS post-booking SMS sender with `SmsSendResult` structured response |
+| `init_db.py` | Schema initialization with 30-retry startup loop and DATABASE_URL validation |
+| `start.sh` | Container startup: runs `init_db.py` then launches Supervisor; aborts on DB init failure |
 | `supervisord.conf` | Runs `python agent.py start` + `node server.js` from `.next/standalone` |
-| `Dockerfile` | Multi-stage: Node builder → Python builder → python:3.11-slim runtime with ffmpeg + Supervisor |
-| `schema.sql` | Table definitions + default agent_config seed |
-| `archive-docs/legacy-runtime/config.json` | Legacy placeholder (all values empty, not used by active code) |
-| `archive-docs/legacy-runtime/ui_server.py` | Dead legacy FastAPI dashboard (returns 410 / disabled page) |
-| `archive-docs/legacy-runtime/make_call.py` | Outbound call dispatcher utility (not used in active flow) |
-| `archive-docs/legacy-runtime/notify.py` | Telegram/WhatsApp webhook utilities (not wired to call flow) |
+| `Dockerfile` | Multi-stage: Node 20 builder → Python 3.11 builder → python:3.11-slim runtime with ffmpeg + Supervisor; HEALTHCHECK against `/api/health` |
+| `schema.sql` | Table definitions (call_logs, transcripts, bookings, notification_events, agent_config) + idempotent migrations + default seed + indexes |
 | `requirements.txt` | Python dependencies |
 
 ### Frontend (frontend/)
 
 | File/Path | Purpose |
 |-----------|---------|
-| `next.config.mjs` | `output: "standalone"` enabled |
-| `middleware.ts` | Password-auth gate for all routes except /login |
+| `next.config.mjs` | `output: "standalone"` + CSP, HSTS, X-Frame-Options, Permissions-Policy security headers |
+| `middleware.ts` | HMAC session auth gate; public routes: `/login`, `/api/health`, `/api/webhook*` |
 | `app/layout.tsx` | Root layout with AppShell sidebar |
 | `app/login/` | Login page + form + server action |
-| `app/dashboard/` | Analytics cards page |
-| `app/crm/` | Call log table with transcript summaries |
-| `app/calendar/` | Confirmed bookings table |
-| `app/agent-config/` | Config form + save action |
-| `lib/postgres-server.ts` | pg Pool + query helper (server-only) |
-| `lib/agent-config-data.ts` | Fetch active config from agent_config |
-| `lib/dashboard-metrics.ts` | Compute analytics from call_logs + bookings |
-| `lib/operations-data.ts` | CRM calls + confirmed bookings queries |
-| `lib/dashboard-auth.ts` | HMAC session cookie logic |
-| `lib/supabase-server.ts` | Dead code — only abort signal helper remains |
+| `app/dashboard/` | Analytics: metric cards, language usage, peak hours, trends, recent bookings, date range filter |
+| `app/crm/` | Call log table with search, date/booking/language/repeat filters, pagination, caller names, summaries |
+| `app/crm/[callId]/` | Individual call detail page with full transcript |
+| `app/calendar/` | Bookings table with search, date/status filters, pagination |
+| `app/agent-config/` | Config form with greeting, system prompt, language selector, mixed-language toggle, VAD threshold, booking instructions |
+| `app/business-settings/` | Business identity page (reuses AgentConfigForm) |
+| `app/api/health/route.ts` | Structured health endpoint: checks env vars, DB connectivity, schema presence; returns 200/503 |
+| `app/api/logout/route.ts` | Logout endpoint: clears session cookie |
+| `app/navigation.tsx` | Sidebar: Dashboard, CRM, Calendar, Agent Config, Business |
+| `lib/postgres-server.ts` | pg Pool + query helper (server-only; `import "server-only"`) |
+| `lib/agent-config-data.ts` | Fetch active config including all business + language fields |
+| `lib/dashboard-metrics.ts` | Compute analytics with date range, language usage, peak hours, trends, recent bookings |
+| `lib/operations-data.ts` | CRM calls + calendar bookings + call detail queries with filters and pagination |
+| `lib/dashboard-auth.ts` | HMAC session cookie logic; configurable session duration via `DASHBOARD_SESSION_MAX_AGE` |
 
 ### Database Schema (schema.sql)
 
 ```
-call_logs:     id (uuid), phone_number, start_time, duration, status, outcome, created_at
-transcripts:   call_id (uuid FK), speaker, text, timestamp
-bookings:      call_id (uuid PK/FK), appointment_time, status, sms_sent
-agent_config:  id (uuid), initial_greeting, system_prompt, vad_threshold, language_code, updated_at
+call_logs:           id (uuid PK), phone_number, caller_name, start_time, duration, status, outcome, summary, language_code, mixed_language_enabled, recording_url, created_at
+transcripts:         call_id (uuid FK), speaker, text, timestamp
+bookings:            call_id (uuid PK/FK), appointment_time, status, sms_sent
+notification_events: id (uuid PK), call_id (uuid FK), channel, provider, event_type, status, provider_response, error_message, created_at
+agent_config:        id (uuid PK), business_name, business_phone, business_timezone, booking_instructions, initial_greeting, system_prompt, vad_threshold, language_code, mixed_language_enabled, updated_at
 ```
 
 ---
@@ -62,19 +62,38 @@ agent_config:  id (uuid), initial_greeting, system_prompt, vad_threshold, langua
 
 - Python compilation of all `.py` files passes.
 - Next.js `npm run build` succeeds with standalone output.
-- PostgreSQL connection via `DATABASE_URL` (both Python and Next.js).
-- Dashboard login with `DASHBOARD_PASSWORD`.
+- PostgreSQL connection via `DATABASE_URL` (both Python `psycopg2` and Next.js `pg`).
+- Dashboard login with `DASHBOARD_PASSWORD` via HMAC session cookie.
+- Configurable session duration via `DASHBOARD_SESSION_MAX_AGE` env var (default 12h).
+- Logout endpoint (`POST /api/logout`) clears session cookie.
 - Middleware redirects unauthenticated users to `/login`.
-- Call log creation on inbound call start.
+- Health endpoint (`GET /api/health`) checks env vars, DB connectivity, and schema tables; returns 200/503 JSON.
+- Docker HEALTHCHECK pings `/api/health` every 30s.
+- Call log creation on inbound call start with `language_code` and `mixed_language_enabled`.
 - Transcript persistence turn-by-turn via `asyncio.create_task`.
-- Cal.com booking creation via LLM tool call with verbal confirmation.
+- Cal.com booking creation via LLM tool call with verbal confirmation filler message in prompt.
 - Booking duplicate prevention via `ON CONFLICT (call_id)`.
-- SMS duplicate prevention via `sms_sent` flag check.
+- SMS duplicate prevention via atomic `sms_sent` claim/release pattern.
+- Notification event recording to `notification_events` table after SMS attempt.
+- `caller_name` persisted to `call_logs` during booking via `_persist_booking_caller_details()`.
+- Call summary auto-generated by `_build_call_summary()` and stored in `call_logs.summary`.
 - `init_db.py` retry loop (30 attempts × 2s = 60s max wait).
-- `start.sh` no longer aborts on DB init failure.
-- Call lifecycle completion: shutdown callback drains transcripts, updates call_logs, triggers SMS.
-- Supervisor starts both services with restart policies.
+- `start.sh` aborts with `exit 1` on DB init failure (refuses to start Supervisor).
+- Startup environment validation in `agent.py`: checks all required env vars + DB connectivity.
+- Multilingual support: `AgentConfig.language_code` and `mixed_language_enabled` fully wired from DB → runtime → STT/TTS.
+- Sarvam TTS language and speaker dynamically selected via `_build_runtime_language_config()` using `SARVAM_SPEAKERS_BY_LANGUAGE` map.
+- Sarvam STT language set to configured language in fixed mode, or `"unknown"` (auto-detect) when mixed-language is enabled.
+- VAD threshold clamped to practical phone-call range (0.3–0.7) by default; override via `ALLOW_FULL_VAD_RANGE` env var.
+- Agent config form includes language selector (en-IN, hi-IN, kn-IN), mixed-language toggle, and voice route preview card.
+- Business settings page (`/business-settings`) with business name, phone, timezone, booking instructions.
+- Save action writes all config fields including language and business settings.
+- Dashboard metrics with date range filter (today, 7d, 30d, all), trends, language usage, peak call hours, repeat callers, recent bookings.
+- CRM table with search by phone/name, date range filter, booking status filter, language filter, repeat caller filter, pagination.
+- CRM call detail page (`/crm/[callId]`) with full transcript, call metadata, and booking info.
+- Calendar bookings table with search, date range filter, status filter, pagination.
+- Supervisor starts both services with restart policies and SIGTERM propagation.
 - Docker multi-stage build structure is correct.
+- Security headers emitted via `next.config.mjs`: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.
 
 ---
 
@@ -82,13 +101,9 @@ agent_config:  id (uuid), initial_greeting, system_prompt, vad_threshold, langua
 
 | Area | Status | Detail |
 |------|--------|--------|
-| **Agent config persistence** | ⚠️ | Saves/loads `initial_greeting`, `system_prompt`, `vad_threshold` correctly, but **ignores `language_code`** entirely |
-| **Dashboard UI labels** | ⚠️ | Stale "Supabase service role..." text in `agent-config/page.tsx:18` and `dashboard/page.tsx:50` |
-| **Call status lifecycle** | ⚠️ | `call_logs.status` is inserted as `"connected"` at start; schema default is `"started"` — inconsistent |
-| **VAD threshold** | ⚠️ | Loaded from DB, clamped to 0.0–1.0, but not validated against Silero's practical optimal range |
-| **Sarvam TTS language** | ⚠️ | Hardcoded to `hi-IN` / speaker `kavya` in agent.py regardless of config |
-| **Sarvam STT language** | ⚠️ | Set to `"unknown"` — may auto-detect, but not configurable from dashboard |
-| **Dashboard metrics** | ⚠️ | Metric cards exist but no time series charts; no date range filters; loads all historical data |
+| **Call status lifecycle** | ⚠️ | `call_logs.status` is inserted as `"connected"` at start; schema default is `"started"` — minor inconsistency, but completion correctly updates to `"completed"` or `"failed"` |
+| **Transcript summary** | ⚠️ | `buildTranscriptSummary()` in `operations-data.ts` concatenates turns (truncated at 180 chars); not a semantic summary. However, `call_logs.summary` now has a generated summary from the agent |
+| **Recording persistence** | ⚠️ | `recording_url` column exists in schema but no code populates it; recording URLs are not yet captured from LiveKit |
 
 ---
 
@@ -96,41 +111,22 @@ agent_config:  id (uuid), initial_greeting, system_prompt, vad_threshold, langua
 
 | Issue | Severity | Location |
 |-------|----------|----------|
-| **Language handling completely unwired** | High | `agent_config.language_code` exists in schema but `AgentConfig` dataclass lacks the field; TTS hardcodes `hi-IN`; STT hardcodes `"unknown"`; no UI selector; save action ignores it |
-| **No health endpoint** | Medium | Easypanel cannot verify container health; 502s hard to diagnose |
-| **Stale Supabase UI text** | Low | `dashboard/page.tsx:50`, `agent-config/page.tsx:18` |
-| **No `notification_events` table** | Medium | schema.sql comments reference it but table not created; SMS failures only in stdout |
-| **Transcript summary is raw concatenation** | Low | `buildTranscriptSummary()` in `operations-data.ts:58` concatenates turns, not semantic summary |
-| **No CRM search/filter** | Medium | CRM table has no search by phone or name |
-| **No transcript detail view** | Medium | No per-call transcript page |
-| **No caller_name column in call_logs** | Medium | Booking collects name but it's not persisted to call_logs |
-| **No call summary column** | Low | `agent.md` says "persist summary" but schema has no place for it |
-| **Archived `notify.py` orphaned** | Low | Telegram/WhatsApp code exists in `archive-docs/legacy-runtime/notify.py` but is never called from agent.py |
-| **Archived `ui_server.py` dead code** | Low | `archive-docs/legacy-runtime/ui_server.py` returns 410 and is not part of the runtime |
-| **Archived `calendar_tools.py` legacy** | Low | Archived availability helper is not in the active root runtime path |
-| **Archived `config.json` legacy** | Low | Empty placeholder archived for reference, not used by active code |
-| **Python DB: no connection pooling** | Low | Each query opens a new TCP connection; acceptable at current scale |
-| **Cal.com API version pinned** | Low | `cal-api-version: 2024-08-13` may be deprecated by Cal.com |
+| **Python DB: no connection pooling** | Low | `db.py` opens a new TCP connection per query; acceptable at current scale |
+| **Cal.com API version pinned** | Low | `tools.py:163` uses `cal-api-version: 2024-08-13`; may need updating |
+| **No retry logic for DB writes during a call** | Medium | Transient DB failures during transcript or booking writes could lose data |
+| **Archived legacy files in `archive-docs/`** | Low | Orphaned code (`notify.py`, `ui_server.py`, `make_call.py`, `calendar_tools.py`, `config.json`) exists but is not part of active runtime |
 
 ---
 
-## 5. What Is Missing
+## 5. What Is Missing (Future Work)
 
-- Charts/graphs for call volume over time.
-- CRM search by phone number or name.
-- Individual call detail page with full transcript.
+- Call recording URL capture from LiveKit and storage in `recording_url`.
 - Booking cancellation flow from dashboard.
-- Agent configuration `language_code` UI field.
-- Environment variable validation at startup.
-- Structured health/readiness endpoint.
-- Call recording audio file persistence.
-- Retry logic for DB writes during a call (transient failures could lose data).
-- Date range filters on dashboard metrics.
-- Booking filler message ("One moment...") during Cal.com API call.
-- `caller_name` and `summary` columns in call_logs.
-- `notification_events` table for SMS audit trail.
-- Graceful SIGTERM handling for clean SIP hangup.
-- Language usage, peak call hours, and repeat callers metrics.
+- Rate limiting on login attempts.
+- TTS voice selector in agent config (currently auto-selected by language).
+- Agent config history / change log.
+- Per-user sessions and per-business isolation (Phase 2 multi-tenant).
+- SaaS admin panel (Phase 2).
 
 ---
 
@@ -157,58 +153,24 @@ The following 18 markdown files were moved to `/archive-docs/` on 2026-05-08. Ea
 | `AGENTS.md` | 9-line build instructions; incorporated into PLAN.md |
 | `plan.md` | 10-part roadmap; superseded by /docs/PLAN.md (now 15 parts) |
 | `review.md` | Senior codebase audit; superseded by this REVIEW.md |
-| `agent.md` | Core AI instructions; superseded by /docs/LOGIC.md + PLAN.md |
+| `agent.md` | Core AI instructions; superseded by /docs/AGENT.md + PLAN.md |
 
 ---
 
-## 7. Code Areas Known to Need Follow-Up
+## 7. Architectural Drift — Resolved
 
-These are specific code locations that need attention in Parts 11–15:
+The following issues from the previous review have been resolved:
 
-### Immediate (Part 11 — Multilingual)
+1. **Supabase → PostgreSQL migration residue.** ✅ Complete. `supabase-server.ts` deleted. No Supabase SDK references remain in active code. All data access uses raw PostgreSQL via `psycopg2` (Python) and `pg` (Node.js).
+2. **Language_code declared but never wired.** ✅ Fully wired. `AgentConfig` dataclass includes `language_code` and `mixed_language_enabled`. Runtime selects STT language, TTS language, and TTS speaker dynamically. Dashboard has language selector and mixed-language toggle.
+3. **Port inconsistency.** ✅ Resolved. Active code consistently uses port 3000. Archived docs referencing port 8000 are non-authoritative.
+4. **Missing health endpoint.** ✅ Implemented. `/api/health` checks env vars, DB connectivity, and schema tables. Dockerfile HEALTHCHECK uses it.
+5. **Missing env validation.** ✅ Implemented. `validate_startup_environment()` in `agent.py` checks all required env vars and DB connectivity at startup.
+6. **Missing caller_name/summary columns.** ✅ Both exist in schema and are populated by runtime code.
+7. **Missing notification_events table.** ✅ Created in schema; SMS results are recorded via `record_notification_event()`.
 
-| File | Lines | What |
-|------|-------|------|
-| `agent.py` | ~33-36 | `AgentConfig` dataclass missing `language_code` field |
-| `agent.py` | ~56 | STT `language="unknown"` hardcoded |
-| `agent.py` | ~68-69 | TTS `target_language_code="hi-IN"`, `speaker="kavya"` hardcoded |
-| `agent.py` | ~171 | `fetch_active_agent_config()` query doesn't SELECT `language_code` |
-| `frontend/lib/agent-config-data.ts` | ~17-23, ~49-57 | Query doesn't fetch `language_code` |
-| `frontend/app/agent-config/actions.ts` | ~32-77 | Save action ignores `language_code` |
-| `frontend/app/agent-config/config-form.tsx` | ~48-84 | No language selector UI |
+### Remaining drift (non-blocking)
 
-### Next (Part 12 — Latency)
-
-| File | Lines | What |
-|------|-------|------|
-| `tools.py` | ~91-144 | No filler speech before Cal.com API call |
-| `agent.py` | ~49 | VAD threshold clamping doesn't validate practical Silero range |
-| `agent.py` | ~66 | `max_completion_tokens=160` may truncate complex booking responses |
-
-### Later (Part 13 — CRM Intelligence)
-
-| File | Lines | What |
-|------|-------|------|
-| `schema.sql` | ~3-11 | Missing `caller_name`, `summary` columns in `call_logs` |
-| `frontend/app/crm/page.tsx` | ~41-127 | No search/filter UI |
-| `frontend/lib/operations-data.ts` | ~58 | `buildTranscriptSummary()` is raw concatenation |
-
-### Production (Part 14 — Hardening)
-
-| File | What |
-|------|------|
-| `frontend/` | No `/api/health` endpoint |
-| `init_db.py` | Only validates `DATABASE_URL`; other required env vars not checked |
-| `agent.py` | No SIGTERM handler for graceful SIP hangup |
-| `schema.sql` | No `notification_events` table |
-
----
-
-## 8. Architectural Drift Noted
-
-1. **Supabase → PostgreSQL migration residue.** The data layer migration is structurally complete, but UI labels, dead `supabase-server.ts`, and archived docs still reference Supabase. No Supabase SDK is used in active code.
-2. **Language_code declared but never wired.** The schema and archived `agent.md` both declare `language_code` support, but zero runtime code uses it. TTS is hardcoded to Hindi.
-3. **Port inconsistency.** `supervisord.conf` and Dockerfile now use port 3000 for the dashboard. Older archived docs reference port 8000. The archived `ui_server.py` shim still mentions 8000.
-4. **Outbound remnants.** `archive-docs/legacy-runtime/make_call.py`, `setup_trunk.py`, `transfer_call.md`, and outbound references in archived docs are present but not part of the inbound platform.
-5. **Booking approach divergence.** Archived `mpconfig.md` describes a post-call MCP/Google Calendar approach. Active code uses during-call Cal.com booking via `tools.py`. Both are valid approaches but only the Cal.com path is production code.
-6. **Notification provider divergence.** `archive-docs/legacy-runtime/notify.py` contains Telegram/WhatsApp code. `notifications.py` contains the active Fast2SMS code. They are separate files with no connection.
+1. **Outbound remnants.** `archive-docs/legacy-runtime/make_call.py` and outbound references in archived docs exist but are not part of the inbound platform.
+2. **Booking approach divergence.** Archived `mpconfig.md` describes a post-call MCP/Google Calendar approach. Active code uses during-call Cal.com booking via `tools.py`. Only the Cal.com path is production code.
+3. **Notification provider divergence.** `archive-docs/legacy-runtime/notify.py` contains Telegram/WhatsApp code. `notifications.py` contains the active Fast2SMS code. They are separate files with no connection.

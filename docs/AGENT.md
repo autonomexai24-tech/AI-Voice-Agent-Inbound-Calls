@@ -19,7 +19,8 @@ The agent is a single long-running process started by Supervisor inside the Dock
 At the start of each call, `fetch_active_agent_config()` queries PostgreSQL:
 
 ```sql
-SELECT initial_greeting, system_prompt, vad_threshold, language_code,
+SELECT business_name, business_phone, business_timezone, booking_instructions,
+       initial_greeting, system_prompt, vad_threshold, language_code,
        mixed_language_enabled, updated_at
 FROM agent_config
 ORDER BY updated_at DESC NULLS LAST
@@ -68,12 +69,22 @@ The LLM is instructed to speak the configured greeting verbatim. This means the 
 
 ## 4. How the System Prompt Is Applied
 
-The system prompt from config is passed as the `instructions` parameter to the `InboundAssistant` (which extends `Agent`). A hardcoded **booking policy** is appended:
+The system prompt from config is passed as the `instructions` parameter to the `InboundAssistant` (which extends `Agent`). Four policy blocks are appended:
 
 ```
+[BUSINESS SETTINGS]
+Business name: {business_name}.
+Callback phone: {business_phone or 'not provided'}.
+Business timezone: {business_timezone}.
+Booking instructions: {booking_instructions}.
+
+[LANGUAGE POLICY]
+(Depends on config — single-language or mixed-language variant)
+
 [RESPONSE POLICY]
 Keep replies short, calm, and receptionist-like. Ask one question at a time.
-Prefer one concise sentence unless confirming appointment details or explaining a booking failure.
+Prefer one concise sentence. Use two short sentences only for appointment
+confirmation or booking failure. Never leave dead air.
 
 [BOOKING POLICY]
 If the caller wants to book an appointment, collect their name, phone number,
@@ -252,17 +263,23 @@ This is a deterministic, zero-latency summary. It does not use LLM summarization
 A shutdown callback is registered after the agent pipeline starts:
 
 ```python
-ctx.add_shutdown_callback(lambda: finalize_call(call_id, call_started_at, caller_phone))
+ctx.add_shutdown_callback(
+    lambda: finalize_call(
+        call_id, call_started_at, caller_phone,
+        business_name=config.business_name,
+        business_phone=config.business_phone,
+    )
+)
 ```
 
 `finalize_call()` runs in sequence:
 
 1. **`drain_transcript_tasks(timeout=2.0)`** — waits up to 2 seconds for pending transcript inserts. Cancels any that don't finish.
-2. **`complete_call_log(call_id, started_at)`** — calculates duration, determines outcome (`"booked"` if confirmed booking exists, `"completed"` otherwise), and updates:
+2. **`complete_call_log(call_id, started_at)`** — calculates duration, determines outcome (`"booked"` if confirmed booking exists, `"completed"` otherwise), generates a rule-based summary, and updates:
    ```sql
-   UPDATE call_logs SET duration = %s, status = %s, outcome = %s WHERE id = %s
+   UPDATE call_logs SET duration = %s, status = %s, outcome = %s, summary = %s WHERE id = %s
    ```
-3. **`send_post_call_booking_sms(call_id, caller_phone)`** — checks for confirmed booking with `sms_sent=false`, sends SMS via Fast2SMS, marks `sms_sent=true`.
+3. **`send_post_call_booking_sms(call_id, caller_phone, business_name, business_phone)`** — checks for confirmed booking with `sms_sent=false`, atomically claims the booking, sends SMS via Fast2SMS, records the result in `notification_events`, and releases the claim on failure.
 
 ### Failure path
 

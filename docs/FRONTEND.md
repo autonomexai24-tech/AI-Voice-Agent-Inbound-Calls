@@ -81,11 +81,11 @@ Standard `npm start` loads the full `node_modules` directory into memory. The st
 - **Current implementation:** Form with initial greeting (textarea), system prompt (textarea), primary language dropdown, mixed-language toggle, and VAD threshold (number input). Save action updates `agent_config` table. New calls pick up latest config.
 - **Missing:** TTS voice selector, booking settings, config history.
 
-### 3.6 Settings (NOT YET IMPLEMENTED)
+### 3.6 Business Settings (`/business-settings`)
 
-- **Purpose:** Business-level settings, API key management, operator preferences.
-- **Target:** Part 13 or later.
-- **See:** Section 9 (Settings Architecture) below.
+- **Purpose:** Business identity, callback number, timezone, booking rules, and voice runtime behavior.
+- **Current implementation:** Reuses `AgentConfigForm` to expose all business-level and voice-runtime config fields. Includes business name, callback phone, timezone, booking instructions, greeting, system prompt, language, mixed-language mode, and VAD threshold.
+- **Missing:** Per-business API key management, operator preferences. These are Phase 2+ concerns.
 
 ### 3.7 Admin Panel (ROADMAP ONLY)
 
@@ -104,12 +104,7 @@ Dashboard    → /dashboard
 CRM          → /crm
 Calendar     → /calendar
 Agent Config → /agent-config
-```
-
-**Future additions** (when implemented):
-
-```
-Settings     → /settings
+Business     → /business-settings
 ```
 
 The sidebar is a persistent left panel on desktop (240px) and a horizontal scrollable nav on mobile. Active page is highlighted with dark background. Login page bypasses the shell entirely.
@@ -473,9 +468,8 @@ Indian callers frequently code-switch between Hindi and English within the same 
 ## 14. Known Frontend Issues
 
 | Issue | Severity | Fix target |
-|-------|----------|-----------|
-| No Settings page | Low — single-tenant doesn't need it yet | Phase 2 |
-| `supabase-server.ts` exists in `frontend/lib/` | Low — dead code | Cleanup task |
+|-------|----------|------------|
+| No per-business API key management in Settings | Low — single-tenant doesn’t need it yet | Phase 2 |
 
 ---
 
