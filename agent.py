@@ -380,20 +380,32 @@ def _find_phone_number(metadata: dict[str, Any], ctx: JobContext) -> str | None:
         "sip.phoneNumber",
     )
     for key in metadata_candidates:
-        value = metadata.get(key)
+        value = _metadata_lookup(metadata, key)
         if value:
             return str(value)
 
     for participant in ctx.room.remote_participants.values():
         attrs = participant.attributes or {}
         for key in metadata_candidates:
-            value = attrs.get(key)
+            value = _metadata_lookup(attrs, key)
             if value:
                 return str(value)
         if participant.identity:
             return participant.identity
 
     return None
+
+
+def _metadata_lookup(source: dict[str, Any], key: str) -> Any:
+    if key in source:
+        return source[key]
+
+    current: Any = source
+    for part in key.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
 
 
 def _coerce_agent_config(row: dict[str, Any] | None) -> AgentConfig:
@@ -716,10 +728,15 @@ async def entrypoint(ctx: JobContext) -> None:
     try:
         await ctx.connect()
     except Exception as exc:
-        logger.exception("[LIVEKIT] Failed to connect to room: %s", exc)
+        log_event(
+            logging.ERROR,
+            "livekit_room_connect_failed",
+            error_type=type(exc).__name__,
+            error=_redact_secret_values(str(exc)),
+        )
         return
 
-    logger.info("[LIVEKIT] Connected to room=%s", ctx.room.name)
+    log_event(logging.INFO, "livekit_room_connected", room=ctx.room.name)
 
     # SIP metadata can arrive on the room, job dispatch metadata, or participant attributes.
     await asyncio.sleep(0.25)
@@ -729,9 +746,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
     caller_phone = _find_phone_number(metadata, ctx)
     if caller_phone:
-        logger.info("[CALLER] Incoming caller ID: %s", caller_phone)
+        log_event(logging.INFO, "caller_identity_detected", room=ctx.room.name, phone_last4=caller_phone[-4:])
     else:
-        logger.info("[CALLER] Incoming caller ID unavailable")
+        log_event(logging.WARNING, "caller_identity_unavailable", room=ctx.room.name)
 
     config = fetch_active_agent_config()
     call_id, call_started_at = create_call_log(caller_phone, config)
@@ -751,7 +768,14 @@ async def entrypoint(ctx: JobContext) -> None:
     try:
         await agent.start(ctx)
     except Exception as exc:
-        logger.exception("[AGENT] Placeholder startup failed: %s", exc)
+        log_event(
+            logging.ERROR,
+            "agent_pipeline_start_failed",
+            call_id=call_id,
+            room=ctx.room.name,
+            error_type=type(exc).__name__,
+            error=_redact_secret_values(str(exc)),
+        )
         await complete_call_log(
             call_id,
             call_started_at,
